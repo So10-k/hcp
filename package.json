@@ -1,0 +1,28 @@
+{
+  "name": "sidequest",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "remotion:studio": "remotion studio remotion/index.ts",
+    "remotion:still": "remotion still remotion/index.ts sidequest-create-reel --frame=75 --scale=0.25"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
+    "@remotion/cli": "^4.0.448",
+    "@remotion/player": "^4.0.448",
+    "next": "^16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "remotion": "^4.0.448"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.29",
+    "@types/react": "19.0.12",
+    "@types/react-dom": "19.0.4",
+    "typescript": "5.8.3"
+  }
+}
