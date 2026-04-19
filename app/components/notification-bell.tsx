@@ -14,6 +14,8 @@ type Notification = {
     | "high-roller-completed"
     | "high-roller-bust"
     | "event-fast-forwarded"
+    | "daily-spin-won"
+    | "combo-milestone"
     | "custom";
   title: string;
   body: string;
@@ -34,6 +36,8 @@ const KIND_COLORS: Record<Notification["kind"], string> = {
   "high-roller-completed": "var(--yellow)",
   "high-roller-bust": "var(--red)",
   "event-fast-forwarded": "var(--sky)",
+  "daily-spin-won": "var(--yellow)",
+  "combo-milestone": "var(--mint)",
   custom: "var(--sky)"
 };
 
@@ -223,11 +227,15 @@ export function NotificationBell() {
                           ? "💥"
                           : toast.kind === "event-fast-forwarded"
                             ? "⏭"
-                            : toast.kind === "account-suspended"
-                              ? "⏸"
-                              : toast.kind === "account-unsuspended"
-                                ? "🔓"
-                                : "✨"}
+                            : toast.kind === "daily-spin-won"
+                              ? "🎡"
+                              : toast.kind === "combo-milestone"
+                                ? "🔥"
+                                : toast.kind === "account-suspended"
+                                  ? "⏸"
+                                  : toast.kind === "account-unsuspended"
+                                    ? "🔓"
+                                    : "✨"}
               </span>
             )}
             <div className="notif-toast-copy">
@@ -246,11 +254,15 @@ export function NotificationBell() {
                             ? "Bust"
                             : toast.kind === "event-fast-forwarded"
                               ? "Event jumped"
-                              : toast.kind === "account-suspended"
-                                ? "Account paused"
-                                : toast.kind === "account-unsuspended"
-                                  ? "You're back"
-                                  : "For you"}
+                              : toast.kind === "daily-spin-won"
+                                ? "Daily spin"
+                                : toast.kind === "combo-milestone"
+                                  ? "Combo unlocked"
+                                  : toast.kind === "account-suspended"
+                                    ? "Account paused"
+                                    : toast.kind === "account-unsuspended"
+                                      ? "You're back"
+                                      : "For you"}
               </span>
               <strong>{toast.title}</strong>
               <p>{toast.body}</p>

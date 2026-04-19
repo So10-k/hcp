@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TutorialPlayer } from "../components/tutorial-player";
 import {
   HIGHROLLER_EVENT_TITLE,
   HIGHROLLER_REWARD_IMAGE,
@@ -9,6 +10,8 @@ import {
   HIGHROLLER_SOFT_BUST_DROP,
   HIGHROLLER_SOFT_BUST_THRESHOLD
 } from "../lib/highroller-config";
+
+const HIGHROLLER_TUTORIAL_SEEN_KEY = "sidequest_highroller_tutorial_seen_v1";
 
 type Run = {
   position: number;
@@ -57,6 +60,20 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
 
   const coinRotRef = useRef(0);
   const coinRef = useRef<HTMLDivElement | null>(null);
+
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem(HIGHROLLER_TUTORIAL_SEEN_KEY);
+      if (!seen) {
+        setTutorialOpen(true);
+        window.localStorage.setItem(HIGHROLLER_TUTORIAL_SEEN_KEY, new Date().toISOString());
+      }
+    } catch {
+      setTutorialOpen(true);
+    }
+  }, []);
 
   const canFlip = !flipping && !run.completedAt && run.rollsAvailable > 0;
 
@@ -189,6 +206,14 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
               ) : null}
             </div>
             <p className="hr-odds">Clean-run odds: {completionOdds}% per attempt. The soft bust above rung {HIGHROLLER_SOFT_BUST_THRESHOLD} is what makes it possible.</p>
+            <button
+              type="button"
+              className="tutorial-rewatch"
+              onClick={() => setTutorialOpen(true)}
+              aria-label="Rewatch tutorial"
+            >
+              Rewatch tutorial
+            </button>
           </section>
 
           <section className="hr-panel">
@@ -257,6 +282,12 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
           </div>
         </div>
       ) : null}
+
+      <TutorialPlayer
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+        src="/sidequest-highroller-tutorial.mp4"
+      />
     </>
   );
 }

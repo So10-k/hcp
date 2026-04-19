@@ -9,6 +9,9 @@ import {
   adminAwardEventTokens,
   adminAwardSticker,
   adminCompleteGameboardEvent,
+  adminForceDailySpin,
+  adminResetCombo,
+  adminResetDailySpin,
   adminResetGameboardEvent,
   adminSuspendUser,
   adminUnsuspendUser
@@ -33,7 +36,10 @@ type ActionBody =
     }
   | { action: "fast-forward-event"; userId: string; eventId: string }
   | { action: "reset-event"; userId: string; eventId: string }
-  | { action: "award-event-tokens"; userId: string; eventId: string; count: number };
+  | { action: "award-event-tokens"; userId: string; eventId: string; count: number }
+  | { action: "force-daily-spin"; userId: string }
+  | { action: "reset-daily-spin"; userId: string }
+  | { action: "reset-combo"; userId: string };
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -90,6 +96,18 @@ export async function POST(request: Request) {
           return NextResponse.json({ error: "Unknown event id." }, { status: 400 });
         }
         await adminAwardEventTokens(admin.id, body.userId, body.eventId, body.count);
+        return NextResponse.json({ ok: true });
+      }
+      case "force-daily-spin": {
+        const result = await adminForceDailySpin(admin.id, body.userId);
+        return NextResponse.json({ ok: true, prize: result });
+      }
+      case "reset-daily-spin": {
+        await adminResetDailySpin(admin.id, body.userId);
+        return NextResponse.json({ ok: true });
+      }
+      case "reset-combo": {
+        await adminResetCombo(admin.id, body.userId);
         return NextResponse.json({ ok: true });
       }
       default:

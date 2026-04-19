@@ -3,6 +3,8 @@
 import Image from "next/image";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ComboOverlay } from "./components/combo-overlay";
+import { DailySpinTrigger } from "./components/daily-spin-trigger";
 import { HighRollerBanner } from "./components/highroller-banner";
 import { LteBanner } from "./components/lte-banner";
 import { NotificationBell } from "./components/notification-bell";
@@ -206,6 +208,7 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
   const [showTutorial, setShowTutorial] = useState(true);
   const [lteRun, setLteRun] = useState<LteRun | null>(null);
   const [highRollerRun, setHighRollerRun] = useState<HighRollerRun | null>(null);
+  const [comboPulse, setComboPulse] = useState(0);
   const [boardTutorialOpen, setBoardTutorialOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
@@ -615,6 +618,7 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
     });
     setConfettiTitle(quest.title);
     grantActiveEventToken();
+    setComboPulse((p) => p + 1);
   }
 
   function createQuest(event: FormEvent<HTMLFormElement>) {
@@ -759,6 +763,7 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
           >
             ▶ Tutorial
           </button>
+          <DailySpinTrigger variant="pill" />
           <NotificationBell />
         </div>
       </nav>
@@ -944,6 +949,8 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
         onClose={() => setBoardTutorialOpen(false)}
         src="/sidequest-board-tutorial.mp4"
       />
+
+      <ComboOverlay pulse={comboPulse} />
     </main>
   );
 }

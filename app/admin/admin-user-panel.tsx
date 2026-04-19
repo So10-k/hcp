@@ -23,6 +23,9 @@ type AdminUserSummary = {
   highRollerPeak: number;
   highRollerBusts: number;
   highRollerCompleted: boolean;
+  peakCombo: number;
+  totalCombos: number;
+  spunToday: boolean;
 };
 
 type EventId = "spring-sprint" | "high-roller";
@@ -42,6 +45,7 @@ type Props = {
 type ModalState =
   | { kind: "suspend"; user: AdminUserSummary }
   | { kind: "dice"; user: AdminUserSummary }
+  | { kind: "flips"; user: AdminUserSummary }
   | { kind: "sticker"; user: AdminUserSummary }
   | { kind: "badge"; user: AdminUserSummary }
   | { kind: "event"; user: AdminUserSummary }
@@ -116,6 +120,15 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
   const quickUnsuspend = (user: AdminUserSummary) =>
     runAction({ action: "unsuspend", userId: user.id }, user, "Account restored");
 
+  const quickForceSpin = (user: AdminUserSummary) =>
+    runAction({ action: "force-daily-spin", userId: user.id }, user, "Daily spin granted");
+
+  const quickResetSpin = (user: AdminUserSummary) =>
+    runAction({ action: "reset-daily-spin", userId: user.id }, user, "Daily spin reset");
+
+  const quickResetCombo = (user: AdminUserSummary) =>
+    runAction({ action: "reset-combo", userId: user.id }, user, "Combo reset");
+
   return (
     <section className="admin-panel admin-user-panel" aria-labelledby="admin-users-title">
       <div className="panel-heading">
@@ -153,6 +166,8 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
               <th>Rewards</th>
               <th>Spring Sprint</th>
               <th>High Roller</th>
+              <th>Combo</th>
+              <th>Daily Spin</th>
               <th>Status</th>
               <th aria-label="Actions"></th>
             </tr>
@@ -160,7 +175,7 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="admin-empty">
+                <td colSpan={10} className="admin-empty">
                   No matching users.
                 </td>
               </tr>
@@ -207,6 +222,39 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                     </span>
                   </td>
                   <td>
+                    <span className="admin-user-stat">{user.peakCombo}×</span>
+                    <span className="admin-user-sub">
+                      {user.totalCombos} runs
+                      {user.peakCombo > 0 ? (
+                        <button
+                          type="button"
+                          className="admin-inline-reset"
+                          onClick={() => void quickResetCombo(user)}
+                          aria-label="Reset combo stats"
+                          title="Reset combo stats"
+                        >
+                          ↻
+                        </button>
+                      ) : null}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`admin-status ${user.spunToday ? "admin-status-paused" : "admin-status-live"}`}>
+                      {user.spunToday ? "Spun" : "Ready"}
+                    </span>
+                    {user.spunToday ? (
+                      <button
+                        type="button"
+                        className="admin-inline-reset"
+                        onClick={() => void quickResetSpin(user)}
+                        aria-label="Reset today's spin"
+                        title="Reset today's spin"
+                      >
+                        ↻
+                      </button>
+                    ) : null}
+                  </td>
+                  <td>
                     {user.suspendedAt ? (
                       <span className="admin-status admin-status-paused" title={user.suspendedReason ?? ""}>
                         Paused
@@ -224,6 +272,16 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                     </button>
                     <button type="button" onClick={() => setModal({ kind: "dice", user })}>
                       Dice
+                    </button>
+                    <button type="button" onClick={() => setModal({ kind: "flips", user })}>
+                      Flips
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void quickForceSpin(user)}
+                      title="Force-grant today's daily spin"
+                    >
+                      Spin
                     </button>
                     <button type="button" onClick={() => setModal({ kind: "event", user })}>
                       Event
@@ -305,6 +363,17 @@ function AdminModal({
       case "dice":
         await onSubmit({ action: "award-dice", userId: modal.user.id, count }, `+${count} dice`);
         return;
+      case "flips":
+        await onSubmit(
+          {
+            action: "award-event-tokens",
+            userId: modal.user.id,
+            eventId: "high-roller",
+            count
+          },
+          `+${count} flip${count === 1 ? "" : "s"}`
+        );
+        return;
       case "sticker":
         if (!stickerTitle.trim()) return;
         await onSubmit(
@@ -385,7 +454,7 @@ function AdminModal({
 
           {modal.kind === "dice" ? (
             <label>
-              Bonus rolls to grant
+              Bonus dice rolls to grant (Spring Sprint)
               <input
                 type="number"
                 min={1}
@@ -394,6 +463,24 @@ function AdminModal({
                 onChange={(event) => setCount(Number.parseInt(event.target.value, 10) || 1)}
               />
             </label>
+          ) : null}
+
+          {modal.kind === "flips" ? (
+            <>
+              <label>
+                Bonus flip tokens to grant (High Roller)
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={count}
+                  onChange={(event) => setCount(Number.parseInt(event.target.value, 10) || 1)}
+                />
+              </label>
+              <p className="admin-modal-warn" style={{ background: "var(--mint)" }}>
+                Lands as flip tokens on this user&apos;s Coin Tower. They get a notification with a 🪙 toast.
+              </p>
+            </>
           ) : null}
 
           {modal.kind === "sticker" ? (
@@ -549,6 +636,7 @@ function modalTitle(kind: NonNullable<ModalState>["kind"]) {
   switch (kind) {
     case "suspend": return "Pause account";
     case "dice": return "Drop bonus dice";
+    case "flips": return "Drop bonus flips";
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
     case "event": return "Event controls";
@@ -559,6 +647,7 @@ function modalAction(kind: NonNullable<ModalState>["kind"]) {
   switch (kind) {
     case "suspend": return "Pause account";
     case "dice": return "Drop dice";
+    case "flips": return "Drop flips";
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
     case "event": return "Apply event action";

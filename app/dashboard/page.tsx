@@ -1,21 +1,23 @@
 import Image from "next/image";
 import Link from "next/link";
+import { DailySpinTrigger } from "../components/daily-spin-trigger";
 import { HighRollerBanner } from "../components/highroller-banner";
 import { LteBanner } from "../components/lte-banner";
 import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { GAMEBOARD_LENGTH } from "../lib/gameboard-config";
 import { HIGHROLLER_EVENT_ID } from "../lib/highroller-config";
-import { getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
+import { getDailySpinStatus, getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [analytics, springRun, highRollerRun] = await Promise.all([
+  const [analytics, springRun, highRollerRun, spinStatus] = await Promise.all([
     getSideQuestAnalytics(),
     getGameboardRun(user.id),
-    getGameboardRun(user.id, HIGHROLLER_EVENT_ID)
+    getGameboardRun(user.id, HIGHROLLER_EVENT_ID),
+    getDailySpinStatus(user.id)
   ]);
   const activeBanner: "spring" | "high-roller" | null = !springRun.completedAt
     ? "spring"
@@ -40,6 +42,11 @@ export default async function DashboardPage() {
           </form>
         </div>
       </nav>
+
+      <DailySpinTrigger
+        initialAvailable={spinStatus.available}
+        initialPrizeShort={spinStatus.prize?.short ?? null}
+      />
 
       {activeBanner === "spring" ? (
         <LteBanner

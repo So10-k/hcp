@@ -31,6 +31,15 @@ import {
   HIGHROLLER_SOFT_BUST_DROP,
   HIGHROLLER_SOFT_BUST_THRESHOLD
 } from "./highroller-config";
+import {
+  COMBO_BADGE_THRESHOLDS,
+  pickRandomSpinSticker,
+  pickSpinPrize,
+  SPIN_BADGE_JACKPOT,
+  SPIN_PRIZES,
+  todayKey,
+  type SpinPrize
+} from "./daily-spin-config";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -279,6 +288,29 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
         payload jsonb,
         created_at timestamptz NOT NULL DEFAULT now()
       )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_daily_spins (
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        date_key text NOT NULL,
+        prize_id text NOT NULL,
+        prize_kind text NOT NULL,
+        prize_amount integer NOT NULL DEFAULT 0,
+        spun_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (user_id, date_key)
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_daily_spins_user_idx
+      ON sidequest_daily_spins (user_id, spun_at DESC)
+    `;
+    await sql`
+      ALTER TABLE sidequest_users
+        ADD COLUMN IF NOT EXISTS peak_combo integer NOT NULL DEFAULT 0
+    `;
+    await sql`
+      ALTER TABLE sidequest_users
+        ADD COLUMN IF NOT EXISTS total_combos integer NOT NULL DEFAULT 0
     `;
   })();
 
@@ -1482,6 +1514,8 @@ export type NotificationKind =
   | "high-roller-completed"
   | "high-roller-bust"
   | "event-fast-forwarded"
+  | "daily-spin-won"
+  | "combo-milestone"
   | "custom";
 
 export type NotificationRecord = {
@@ -1631,6 +1665,9 @@ export type AdminUserSummary = {
   highRollerPeak: number;
   highRollerBusts: number;
   highRollerCompleted: boolean;
+  peakCombo: number;
+  totalCombos: number;
+  spunToday: boolean;
 };
 
 export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
@@ -1655,11 +1692,15 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
       COALESCE(hr.position, 0) AS high_roller_rung,
       COALESCE(hr.peak_position, 0) AS high_roller_peak,
       COALESCE(hr.laps, 0) AS high_roller_busts,
-      (hr.completed_at IS NOT NULL) AS high_roller_completed
+      (hr.completed_at IS NOT NULL) AS high_roller_completed,
+      COALESCE(u.peak_combo, 0) AS peak_combo,
+      COALESCE(u.total_combos, 0) AS total_combos,
+      (ds.user_id IS NOT NULL) AS spun_today
     FROM sidequest_users u
     LEFT JOIN sidequest_boards b ON b.id = CONCAT('user:', u.id)
     LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = ${GAMEBOARD_EVENT_ID}
     LEFT JOIN sidequest_gameboard_runs hr ON hr.user_id = u.id AND hr.event_id = ${HIGHROLLER_EVENT_ID}
+    LEFT JOIN sidequest_daily_spins ds ON ds.user_id = u.id AND ds.date_key = ${todayKey()}
     ORDER BY u.last_active_at DESC
     LIMIT 200
   `) as Array<{
@@ -1681,6 +1722,9 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     high_roller_peak: number;
     high_roller_busts: number;
     high_roller_completed: boolean;
+    peak_combo: number;
+    total_combos: number;
+    spun_today: boolean;
   }>;
   return rows.map((row) => ({
     id: row.id,
@@ -1700,7 +1744,10 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     highRollerRung: row.high_roller_rung,
     highRollerPeak: row.high_roller_peak,
     highRollerBusts: row.high_roller_busts,
-    highRollerCompleted: row.high_roller_completed
+    highRollerCompleted: row.high_roller_completed,
+    peakCombo: row.peak_combo,
+    totalCombos: row.total_combos,
+    spunToday: row.spun_today
   }));
 }
 
@@ -1973,4 +2020,359 @@ export async function listRecentAdminAudit(limit = 50) {
     payload: row.payload as Record<string, unknown> | null,
     createdAt: new Date(row.created_at).toISOString()
   }));
+}
+
+// ===========================================================================
+// Daily Spin — once-per-day wheel of fortune.
+// ===========================================================================
+
+export type DailySpinStatus = {
+  todayKey: string;
+  available: boolean;
+  prize:
+    | null
+    | {
+        id: string;
+        label: string;
+        kind: "xp" | "dice" | "flips" | "sticker" | "jackpot";
+        amount: number;
+        spunAt: string;
+        short: string;
+      };
+  recent: Array<{ dateKey: string; prizeId: string; spunAt: string }>;
+  prizes: Array<{
+    id: string;
+    label: string;
+    kind: "xp" | "dice" | "flips" | "sticker" | "jackpot";
+    amount: number;
+    color: string;
+    textColor: string;
+    short: string;
+    weight: number;
+  }>;
+};
+
+export type DailySpinResult = {
+  status: DailySpinStatus;
+  prize: SpinPrize;
+  prizeIndex: number;
+  rewardId: string | null;
+};
+
+function spinPrizeRow(prize: SpinPrize) {
+  return {
+    id: prize.id,
+    label: prize.label,
+    kind: prize.kind,
+    amount: prize.amount,
+    short: prize.short
+  };
+}
+
+export async function getDailySpinStatus(userId: string): Promise<DailySpinStatus> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const key = todayKey();
+  const rows = (await sql`
+    SELECT date_key, prize_id, prize_kind, prize_amount, spun_at
+    FROM sidequest_daily_spins
+    WHERE user_id = ${userId}
+    ORDER BY spun_at DESC
+    LIMIT 14
+  `) as Array<{
+    date_key: string;
+    prize_id: string;
+    prize_kind: string;
+    prize_amount: number;
+    spun_at: Date | string;
+  }>;
+  const today = rows.find((r) => r.date_key === key);
+  return {
+    todayKey: key,
+    available: !today,
+    prize: today
+      ? {
+          id: today.prize_id,
+          label: SPIN_PRIZES.find((p) => p.id === today.prize_id)?.label ?? today.prize_id,
+          kind: today.prize_kind as "xp" | "dice" | "flips" | "sticker" | "jackpot",
+          amount: today.prize_amount,
+          spunAt: new Date(today.spun_at).toISOString(),
+          short: SPIN_PRIZES.find((p) => p.id === today.prize_id)?.short ?? today.prize_id
+        }
+      : null,
+    recent: rows.map((r) => ({
+      dateKey: r.date_key,
+      prizeId: r.prize_id,
+      spunAt: new Date(r.spun_at).toISOString()
+    })),
+    prizes: SPIN_PRIZES.map((p) => ({
+      id: p.id,
+      label: p.label,
+      kind: p.kind,
+      amount: p.amount,
+      color: p.color,
+      textColor: p.textColor,
+      short: p.short,
+      weight: p.weight
+    }))
+  };
+}
+
+async function applySpinPrize(
+  userId: string,
+  prize: SpinPrize,
+  attribution: { adminId?: string; awardedBy?: string }
+): Promise<string | null> {
+  let rewardId: string | null = null;
+
+  if (prize.kind === "xp") {
+    // XP boost: simple bump — we just record the gain via the reward shelf
+    // as a small celebratory entry. (No global XP table yet.)
+    await createNotification(userId, {
+      kind: "daily-spin-won",
+      title: `Daily spin · +${prize.amount} XP`,
+      body: `Today's spin landed on +${prize.amount} XP. Nice.`,
+      payload: { kind: prize.kind, amount: prize.amount },
+      awardedBy: attribution.awardedBy
+    });
+  } else if (prize.kind === "dice") {
+    for (let i = 0; i < prize.amount; i += 1) {
+      await grantGameboardRoll(userId, GAMEBOARD_EVENT_ID);
+    }
+    await createNotification(userId, {
+      kind: "daily-spin-won",
+      title: `Daily spin · +${prize.amount} dice`,
+      body: `Today's spin dropped ${prize.amount} bonus dice on your Spring Sprint board.`,
+      payload: { kind: prize.kind, amount: prize.amount },
+      awardedBy: attribution.awardedBy
+    });
+  } else if (prize.kind === "flips") {
+    for (let i = 0; i < prize.amount; i += 1) {
+      await grantGameboardRoll(userId, HIGHROLLER_EVENT_ID);
+    }
+    await createNotification(userId, {
+      kind: "daily-spin-won",
+      title: `Daily spin · +${prize.amount} flips`,
+      body: `Today's spin dropped ${prize.amount} bonus flip tokens on your Coin Tower.`,
+      payload: { kind: prize.kind, amount: prize.amount },
+      awardedBy: attribution.awardedBy
+    });
+  } else if (prize.kind === "sticker") {
+    const sticker = pickRandomSpinSticker();
+    rewardId = `daily-spin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const board = await loadSideQuestBoard(userId);
+    const reward: Reward = {
+      id: rewardId,
+      title: sticker.title,
+      kind: "sticker",
+      image: sticker.image,
+      unlocked: true,
+      note: "Won on the daily spin."
+    };
+    await saveSideQuestBoard(
+      userId,
+      { ...board.state, rewards: [reward, ...board.state.rewards] },
+      "daily-spin-sticker"
+    );
+    await createNotification(userId, {
+      kind: "daily-spin-won",
+      title: `Daily spin · ${sticker.title}`,
+      body: "A random sticker dropped from the wheel. It's pinned to your shelf.",
+      payload: { kind: prize.kind, image: sticker.image, title: sticker.title },
+      awardedBy: attribution.awardedBy
+    });
+  } else if (prize.kind === "jackpot") {
+    const board = await loadSideQuestBoard(userId);
+    const already = board.state.rewards.some((r) => r.id === SPIN_BADGE_JACKPOT.id);
+    if (!already) {
+      const reward: Reward = {
+        id: SPIN_BADGE_JACKPOT.id,
+        title: SPIN_BADGE_JACKPOT.title,
+        kind: "badge",
+        image: SPIN_BADGE_JACKPOT.image,
+        unlocked: true,
+        note: SPIN_BADGE_JACKPOT.note
+      };
+      await saveSideQuestBoard(
+        userId,
+        { ...board.state, rewards: [reward, ...board.state.rewards] },
+        "daily-spin-jackpot"
+      );
+      rewardId = SPIN_BADGE_JACKPOT.id;
+    }
+    await createNotification(userId, {
+      kind: "daily-spin-won",
+      title: "JACKPOT.",
+      body: SPIN_BADGE_JACKPOT.vibe,
+      payload: { kind: prize.kind, image: SPIN_BADGE_JACKPOT.image, title: SPIN_BADGE_JACKPOT.title },
+      awardedBy: attribution.awardedBy
+    });
+  }
+
+  if (attribution.adminId) {
+    await writeAudit(attribution.adminId, userId, "force-daily-spin", {
+      prizeId: prize.id,
+      kind: prize.kind,
+      amount: prize.amount
+    });
+  }
+
+  return rewardId;
+}
+
+export async function executeDailySpin(userId: string): Promise<DailySpinResult> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const key = todayKey();
+  const existing = (await sql`
+    SELECT 1 FROM sidequest_daily_spins
+    WHERE user_id = ${userId} AND date_key = ${key} LIMIT 1
+  `) as Array<{ "?column?": number }>;
+  if (existing.length > 0) {
+    throw new Error("You've already spun the wheel today. Come back tomorrow.");
+  }
+  const prize = pickSpinPrize();
+  await sql`
+    INSERT INTO sidequest_daily_spins (user_id, date_key, prize_id, prize_kind, prize_amount)
+    VALUES (${userId}, ${key}, ${prize.id}, ${prize.kind}, ${prize.amount})
+    ON CONFLICT (user_id, date_key) DO NOTHING
+  `;
+  const rewardId = await applySpinPrize(userId, prize, {});
+  const status = await getDailySpinStatus(userId);
+  const prizeIndex = SPIN_PRIZES.findIndex((p) => p.id === prize.id);
+  return { status, prize, prizeIndex, rewardId };
+}
+
+/**
+ * Admin: clear today's spin lock so the user can spin again. Used to
+ * give someone a do-over (e.g. they got a bad prize on launch day).
+ */
+export async function adminResetDailySpin(adminId: string, userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const key = todayKey();
+  await sql`
+    DELETE FROM sidequest_daily_spins
+    WHERE user_id = ${userId} AND date_key = ${key}
+  `;
+  await writeAudit(adminId, userId, "reset-daily-spin", { dateKey: key });
+  await createNotification(userId, {
+    kind: "daily-spin-won",
+    title: "Daily spin reset",
+    body: "An admin reset today's spin — go grab another go.",
+    awardedBy: adminId
+  });
+}
+
+/**
+ * Admin: force-grant a spin to a user. Picks a prize server-side and
+ * applies it just like a normal spin. If they already spun today, this
+ * still runs (admin override) — we wipe today's lock first.
+ */
+export async function adminForceDailySpin(
+  adminId: string,
+  userId: string
+): Promise<{ prizeId: string; prizeKind: string; amount: number }> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const key = todayKey();
+  await sql`
+    DELETE FROM sidequest_daily_spins
+    WHERE user_id = ${userId} AND date_key = ${key}
+  `;
+  const prize = pickSpinPrize();
+  await sql`
+    INSERT INTO sidequest_daily_spins (user_id, date_key, prize_id, prize_kind, prize_amount)
+    VALUES (${userId}, ${key}, ${prize.id}, ${prize.kind}, ${prize.amount})
+  `;
+  await applySpinPrize(userId, prize, { adminId, awardedBy: adminId });
+  return { prizeId: prize.id, prizeKind: prize.kind, amount: prize.amount };
+}
+
+// ===========================================================================
+// Combo multiplier — server-side peak tracking + auto-badge unlocks.
+// ===========================================================================
+
+const COMBO_BADGES: Record<number, { id: string; title: string; image: string; note: string; vibe: string }> = {
+  5: {
+    id: "badge-combo-5x",
+    title: "Combo Streak — 5×",
+    image: "/sticker-bolt.svg",
+    note: "Cleared 5 quests in a 90-second window. The flow state is real.",
+    vibe: "Five in a row. Feeling it."
+  },
+  10: {
+    id: "badge-combo-10x",
+    title: "Combo Streak — 10×",
+    image: "/sticker-spark.svg",
+    note: "Cleared 10 quests in a single combo window. Untouchable.",
+    vibe: "Ten clean. Locked in."
+  }
+};
+
+export type ComboReport = {
+  peakCombo: number;
+  totalCombos: number;
+  newBadge: string | null;
+};
+
+export async function recordCombo(userId: string, combo: number): Promise<ComboReport> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const safe = Math.max(1, Math.min(100, Math.floor(combo)));
+  const rows = (await sql`
+    UPDATE sidequest_users
+    SET peak_combo = GREATEST(peak_combo, ${safe}),
+        total_combos = total_combos + 1
+    WHERE id = ${userId}
+    RETURNING peak_combo, total_combos
+  `) as Array<{ peak_combo: number; total_combos: number }>;
+
+  const peak = rows[0]?.peak_combo ?? safe;
+  const total = rows[0]?.total_combos ?? 1;
+
+  // Auto-unlock combo badges on first cross of each threshold.
+  let newBadge: string | null = null;
+  for (const threshold of COMBO_BADGE_THRESHOLDS) {
+    if (safe >= threshold) {
+      const badge = COMBO_BADGES[threshold];
+      if (!badge) continue;
+      const board = await loadSideQuestBoard(userId);
+      if (!board.state.rewards.some((r) => r.id === badge.id)) {
+        const reward: Reward = {
+          id: badge.id,
+          title: badge.title,
+          kind: "badge",
+          image: badge.image,
+          unlocked: true,
+          note: badge.note
+        };
+        await saveSideQuestBoard(
+          userId,
+          { ...board.state, rewards: [reward, ...board.state.rewards] },
+          `combo-badge-${threshold}`
+        );
+        await createNotification(userId, {
+          kind: "combo-milestone",
+          title: badge.title,
+          body: badge.vibe,
+          payload: { image: badge.image, title: badge.title, threshold, combo: safe }
+        });
+        newBadge = badge.id;
+      }
+    }
+  }
+
+  return { peakCombo: peak, totalCombos: total, newBadge };
+}
+
+export async function adminResetCombo(adminId: string, userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_users
+    SET peak_combo = 0, total_combos = 0
+    WHERE id = ${userId}
+  `;
+  await writeAudit(adminId, userId, "reset-combo", null);
 }
