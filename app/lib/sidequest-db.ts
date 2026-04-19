@@ -72,6 +72,8 @@ export type AuthUser = {
   username: string;
   role: "member" | "admin";
   favoriteCategory: Category;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
 };
 
 export type SignUpInput = {
@@ -102,6 +104,9 @@ type UserRow = {
   quests_completed: number;
   joined_at: Date | string;
   last_active_at: Date | string;
+  suspended_at?: Date | string | null;
+  suspended_reason?: string | null;
+  suspended_by?: string | null;
 };
 
 export function getSql() {
@@ -224,6 +229,42 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
     await sql`
       CREATE INDEX IF NOT EXISTS sidequest_party_members_user_idx
       ON sidequest_party_members (user_id)
+    `;
+    await sql`
+      ALTER TABLE sidequest_users ADD COLUMN IF NOT EXISTS suspended_at timestamptz
+    `;
+    await sql`
+      ALTER TABLE sidequest_users ADD COLUMN IF NOT EXISTS suspended_reason text
+    `;
+    await sql`
+      ALTER TABLE sidequest_users ADD COLUMN IF NOT EXISTS suspended_by text
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_notifications (
+        id bigserial PRIMARY KEY,
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        kind text NOT NULL,
+        title text NOT NULL,
+        body text NOT NULL,
+        payload jsonb,
+        awarded_by text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        read_at timestamptz
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_notifications_user_idx
+      ON sidequest_notifications (user_id, created_at DESC)
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_admin_audit (
+        id bigserial PRIMARY KEY,
+        admin_id text NOT NULL,
+        target_user_id text,
+        action text NOT NULL,
+        payload jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
     `;
   })();
 
@@ -465,7 +506,9 @@ function toAuthUser(row: UserRow): AuthUser {
     email: row.email,
     username: row.username ?? row.email.split("@")[0] ?? "quester",
     role: row.role === "admin" ? "admin" : "member",
-    favoriteCategory
+    favoriteCategory,
+    suspendedAt: row.suspended_at ? new Date(row.suspended_at).toISOString() : null,
+    suspendedReason: row.suspended_reason ?? null
   };
 }
 
@@ -640,7 +683,10 @@ export async function loginSideQuestUser(input: LoginInput) {
       quests_created,
       quests_completed,
       joined_at,
-      last_active_at
+      last_active_at,
+      suspended_at,
+      suspended_reason,
+      suspended_by
     FROM sidequest_users
     WHERE lower(email) = ${usernameOrEmail}
       OR lower(username) = ${usernameOrEmail}
@@ -703,7 +749,10 @@ export async function getUserBySessionToken(token: string | undefined) {
       users.quests_created,
       users.quests_completed,
       users.joined_at,
-      users.last_active_at
+      users.last_active_at,
+      users.suspended_at,
+      users.suspended_reason,
+      users.suspended_by
     FROM sidequest_sessions sessions
     INNER JOIN sidequest_users users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ${hashToken(token)}
@@ -822,7 +871,10 @@ export async function getSideQuestAnalytics(): Promise<AnalyticsSnapshot> {
       quests_created,
       quests_completed,
       joined_at,
-      last_active_at
+      last_active_at,
+      suspended_at,
+      suspended_reason,
+      suspended_by
     FROM sidequest_users
     ORDER BY last_active_at DESC
     LIMIT 24
@@ -1259,4 +1311,402 @@ async function propagatePartyEdits(userId: string, state: SideQuestState): Promi
       // because a party sync had trouble.
     }
   }
+}
+
+// ===========================================================================
+// Notifications — admin-triggered events surface as toasts on the recipient's
+// next page load or notification poll.
+// ===========================================================================
+
+export type NotificationKind =
+  | "award-sticker"
+  | "award-badge"
+  | "award-dice"
+  | "account-suspended"
+  | "account-unsuspended"
+  | "custom";
+
+export type NotificationRecord = {
+  id: number;
+  userId: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  payload: Record<string, unknown> | null;
+  awardedBy: string | null;
+  createdAt: string;
+  readAt: string | null;
+};
+
+type NotificationRow = {
+  id: number;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  payload: unknown;
+  awarded_by: string | null;
+  created_at: Date | string;
+  read_at: Date | string | null;
+};
+
+function toNotification(row: NotificationRow): NotificationRecord {
+  return {
+    id: Number(row.id),
+    userId: row.user_id,
+    kind: row.kind as NotificationKind,
+    title: row.title,
+    body: row.body,
+    payload: (row.payload as Record<string, unknown> | null) ?? null,
+    awardedBy: row.awarded_by,
+    createdAt: new Date(row.created_at).toISOString(),
+    readAt: row.read_at ? new Date(row.read_at).toISOString() : null
+  };
+}
+
+export async function createNotification(
+  userId: string,
+  input: { kind: NotificationKind; title: string; body: string; payload?: Record<string, unknown>; awardedBy?: string }
+): Promise<NotificationRecord> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    INSERT INTO sidequest_notifications (user_id, kind, title, body, payload, awarded_by)
+    VALUES (
+      ${userId},
+      ${input.kind},
+      ${input.title},
+      ${input.body},
+      ${input.payload ? JSON.stringify(input.payload) : null}::jsonb,
+      ${input.awardedBy ?? null}
+    )
+    RETURNING id, user_id, kind, title, body, payload, awarded_by, created_at, read_at
+  `) as NotificationRow[];
+  return toNotification(rows[0]);
+}
+
+export async function listNotifications(
+  userId: string,
+  options: { limit?: number; unreadOnly?: boolean } = {}
+): Promise<NotificationRecord[]> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const limit = Math.min(50, Math.max(1, options.limit ?? 20));
+  const rows = options.unreadOnly
+    ? ((await sql`
+        SELECT id, user_id, kind, title, body, payload, awarded_by, created_at, read_at
+        FROM sidequest_notifications
+        WHERE user_id = ${userId} AND read_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `) as NotificationRow[])
+    : ((await sql`
+        SELECT id, user_id, kind, title, body, payload, awarded_by, created_at, read_at
+        FROM sidequest_notifications
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `) as NotificationRow[]);
+  return rows.map(toNotification);
+}
+
+export async function markNotificationsRead(userId: string, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_notifications
+    SET read_at = now()
+    WHERE user_id = ${userId} AND id = ANY(${ids}::bigint[]) AND read_at IS NULL
+  `;
+}
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_notifications
+    SET read_at = now()
+    WHERE user_id = ${userId} AND read_at IS NULL
+  `;
+}
+
+// ===========================================================================
+// Admin actions — suspend/unsuspend, award sticker/badge/dice, list users,
+// spectate state. Every action writes to sidequest_admin_audit for a trail.
+// ===========================================================================
+
+async function writeAudit(
+  adminId: string,
+  targetUserId: string | null,
+  action: string,
+  payload: Record<string, unknown> | null = null
+) {
+  const sql = getSql();
+  await sql`
+    INSERT INTO sidequest_admin_audit (admin_id, target_user_id, action, payload)
+    VALUES (
+      ${adminId},
+      ${targetUserId},
+      ${action},
+      ${payload ? JSON.stringify(payload) : null}::jsonb
+    )
+  `;
+}
+
+export type AdminUserSummary = {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  role: "member" | "admin";
+  joinedAt: string;
+  lastActiveAt: string;
+  questsCreated: number;
+  questsCompleted: number;
+  suspendedAt: string | null;
+  suspendedReason: string | null;
+  rewardsCount: number;
+  gameboardPosition: number;
+  gameboardCompleted: boolean;
+};
+
+export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT
+      u.id,
+      u.name,
+      u.email,
+      u.username,
+      u.role,
+      u.joined_at,
+      u.last_active_at,
+      u.quests_created,
+      u.quests_completed,
+      u.suspended_at,
+      u.suspended_reason,
+      COALESCE(jsonb_array_length(b.state -> 'rewards'), 0) AS rewards_count,
+      COALESCE(gr.position, 0) AS gameboard_position,
+      (gr.completed_at IS NOT NULL) AS gameboard_completed
+    FROM sidequest_users u
+    LEFT JOIN sidequest_boards b ON b.id = CONCAT('user:', u.id)
+    LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = 'spring-sprint'
+    ORDER BY u.last_active_at DESC
+    LIMIT 200
+  `) as Array<{
+    id: string;
+    name: string;
+    email: string;
+    username: string | null;
+    role: string;
+    joined_at: Date | string;
+    last_active_at: Date | string;
+    quests_created: number;
+    quests_completed: number;
+    suspended_at: Date | string | null;
+    suspended_reason: string | null;
+    rewards_count: number;
+    gameboard_position: number;
+    gameboard_completed: boolean;
+  }>;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    username: row.username ?? row.email.split("@")[0] ?? "quester",
+    email: row.email,
+    role: row.role === "admin" ? "admin" : "member",
+    joinedAt: new Date(row.joined_at).toISOString(),
+    lastActiveAt: new Date(row.last_active_at).toISOString(),
+    questsCreated: row.quests_created,
+    questsCompleted: row.quests_completed,
+    suspendedAt: row.suspended_at ? new Date(row.suspended_at).toISOString() : null,
+    suspendedReason: row.suspended_reason,
+    rewardsCount: row.rewards_count,
+    gameboardPosition: row.gameboard_position,
+    gameboardCompleted: row.gameboard_completed
+  }));
+}
+
+export async function adminSuspendUser(
+  adminId: string,
+  userId: string,
+  reason: string
+): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  if (userId === adminId) {
+    throw new Error("Admins cannot suspend themselves.");
+  }
+  await sql`
+    UPDATE sidequest_users
+    SET suspended_at = now(), suspended_reason = ${reason || null}, suspended_by = ${adminId}
+    WHERE id = ${userId}
+  `;
+  // Invalidate sessions so the suspended user is signed out immediately.
+  await sql`DELETE FROM sidequest_sessions WHERE user_id = ${userId}`;
+  await writeAudit(adminId, userId, "suspend", { reason });
+  await createNotification(userId, {
+    kind: "account-suspended",
+    title: "Account paused",
+    body: reason || "An admin paused your account. Reach out if you think this was a mistake.",
+    awardedBy: adminId
+  });
+}
+
+export async function adminUnsuspendUser(adminId: string, userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_users
+    SET suspended_at = NULL, suspended_reason = NULL, suspended_by = NULL
+    WHERE id = ${userId}
+  `;
+  await writeAudit(adminId, userId, "unsuspend", null);
+  await createNotification(userId, {
+    kind: "account-unsuspended",
+    title: "You're back in.",
+    body: "Your account was restored. Welcome back — your board missed you.",
+    awardedBy: adminId
+  });
+}
+
+export async function adminAwardSticker(
+  adminId: string,
+  userId: string,
+  sticker: { title: string; image: string; note: string; kind?: "badge" | "sticker" }
+): Promise<void> {
+  const board = await loadSideQuestBoard(userId);
+  const id = `admin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const reward: Reward = {
+    id,
+    title: sticker.title,
+    kind: sticker.kind ?? "sticker",
+    image: sticker.image,
+    unlocked: true,
+    note: sticker.note
+  };
+  const nextState: SideQuestState = {
+    ...board.state,
+    rewards: [reward, ...board.state.rewards]
+  };
+  await saveSideQuestBoard(userId, nextState, "admin-award-sticker");
+  await writeAudit(adminId, userId, "award-sticker", { reward });
+  await createNotification(userId, {
+    kind: "award-sticker",
+    title: `New ${reward.kind}: ${reward.title}`,
+    body: sticker.note,
+    payload: { image: reward.image, title: reward.title },
+    awardedBy: adminId
+  });
+}
+
+export async function adminAwardBadge(
+  adminId: string,
+  userId: string,
+  badge: { id: string; title: string; image: string; note: string; vibe: string }
+): Promise<void> {
+  const board = await loadSideQuestBoard(userId);
+  const alreadyHas = board.state.rewards.some((r) => r.id === badge.id || r.title === badge.title);
+  if (alreadyHas) {
+    throw new Error(`${board.state.rewards.find((r) => r.title === badge.title) ? "User already has" : "Badge conflict:"} ${badge.title}.`);
+  }
+  const reward: Reward = {
+    id: badge.id,
+    title: badge.title,
+    kind: "badge",
+    image: badge.image,
+    unlocked: true,
+    note: badge.note
+  };
+  const nextState: SideQuestState = {
+    ...board.state,
+    rewards: [reward, ...board.state.rewards]
+  };
+  await saveSideQuestBoard(userId, nextState, "admin-award-badge");
+  await writeAudit(adminId, userId, "award-badge", { badgeId: badge.id });
+  await createNotification(userId, {
+    kind: "award-badge",
+    title: `Badge unlocked: ${badge.title}`,
+    body: badge.vibe,
+    payload: { image: badge.image, title: badge.title, badgeId: badge.id },
+    awardedBy: adminId
+  });
+}
+
+export async function adminAwardDice(
+  adminId: string,
+  userId: string,
+  count: number
+): Promise<void> {
+  const amount = Math.max(1, Math.min(50, Math.round(count)));
+  for (let i = 0; i < amount; i += 1) {
+    await grantGameboardRoll(userId);
+  }
+  await writeAudit(adminId, userId, "award-dice", { count: amount });
+  await createNotification(userId, {
+    kind: "award-dice",
+    title: `+${amount} die roll${amount === 1 ? "" : "s"}`,
+    body: `An admin dropped ${amount} bonus roll${amount === 1 ? "" : "s"} on your Spring Sprint board.`,
+    payload: { count: amount },
+    awardedBy: adminId
+  });
+}
+
+export async function getSpectatorSnapshot(targetUserId: string) {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const userRows = (await sql`
+    SELECT
+      id, name, email, username, role, age_range, school_year, favorite_category,
+      board_role, quests_created, quests_completed, joined_at, last_active_at,
+      suspended_at, suspended_reason, suspended_by
+    FROM sidequest_users WHERE id = ${targetUserId} LIMIT 1
+  `) as UserRow[];
+  if (userRows.length === 0) throw new Error("User not found.");
+  const board = await loadSideQuestBoard(targetUserId);
+  const run = await getGameboardRun(targetUserId).catch(() => null);
+  const notifications = await listNotifications(targetUserId, { limit: 10 });
+  return {
+    user: toUser(userRows[0]),
+    authUser: toAuthUser(userRows[0]),
+    state: board.state,
+    updatedAt: board.updatedAt,
+    gameboardRun: run,
+    notifications
+  };
+}
+
+export async function listRecentAdminAudit(limit = 50) {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT a.id, a.admin_id, a.target_user_id, a.action, a.payload, a.created_at,
+           admin_u.username AS admin_username, target_u.username AS target_username
+    FROM sidequest_admin_audit a
+    LEFT JOIN sidequest_users admin_u ON admin_u.id = a.admin_id
+    LEFT JOIN sidequest_users target_u ON target_u.id = a.target_user_id
+    ORDER BY a.created_at DESC
+    LIMIT ${Math.min(200, Math.max(1, limit))}
+  `) as Array<{
+    id: number;
+    admin_id: string;
+    target_user_id: string | null;
+    action: string;
+    payload: unknown;
+    created_at: Date | string;
+    admin_username: string | null;
+    target_username: string | null;
+  }>;
+  return rows.map((row) => ({
+    id: Number(row.id),
+    adminId: row.admin_id,
+    adminUsername: row.admin_username,
+    targetUserId: row.target_user_id,
+    targetUsername: row.target_username,
+    action: row.action,
+    payload: row.payload as Record<string, unknown> | null,
+    createdAt: new Date(row.created_at).toISOString()
+  }));
 }

@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { getGameboardRun, loadSideQuestBoard } from "../lib/sidequest-db";
 import { GAMEBOARD_EVENT_TITLE, GAMEBOARD_REWARD_IMAGE, GAMEBOARD_REWARD_TITLE } from "../lib/gameboard-config";
@@ -113,6 +114,7 @@ export default async function AchievementsPage() {
           <Link href="/board">My board</Link>
           <Link href="/achievements">Hall</Link>
           {user.role === "admin" ? <Link href="/admin">Admin</Link> : null}
+          <NotificationBell />
           <form action="/api/logout" method="post">
             <button type="submit" className="ghost-button">Log out</button>
           </form>

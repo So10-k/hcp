@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { LteBanner } from "../components/lte-banner";
+import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { GAMEBOARD_LENGTH } from "../lib/gameboard-config";
 import { getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
@@ -25,7 +26,8 @@ export default async function DashboardPage() {
         <div className="nav-actions">
           <Link href="/board">My board</Link>
           <Link href="/achievements">Hall</Link>
-          <Link href="/admin">Admin</Link>
+          {user.role === "admin" ? <Link href="/admin">Admin</Link> : null}
+          <NotificationBell />
           <form action="/api/logout" method="post">
             <button type="submit" className="ghost-button">Log out</button>
           </form>
@@ -51,9 +53,14 @@ export default async function DashboardPage() {
             <Link className="primary-button" href="/board">
               Open my board
             </Link>
-            <Link className="secondary-button" href="/admin">
-              View admin
+            <Link className="secondary-button" href="/achievements">
+              Hall of achievements
             </Link>
+            {user.role === "admin" ? (
+              <Link className="secondary-button" href="/admin">
+                Admin console
+              </Link>
+            ) : null}
           </div>
         </div>
         <Image src="/sticker-shield.svg" alt="" width={180} height={180} priority />

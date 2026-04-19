@@ -4,6 +4,7 @@ import Image from "next/image";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LteBanner } from "./components/lte-banner";
+import { NotificationBell } from "./components/notification-bell";
 import { TutorialPlayer } from "./components/tutorial-player";
 import { GAMEBOARD_LENGTH } from "./lib/gameboard-config";
 
@@ -176,7 +177,7 @@ function syncBoardFields(state: SideQuestState, boards: SideQuestBoard[], active
   };
 }
 
-export default function SideQuestClient() {
+export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean } = {}) {
   const [state, setState] = useState<SideQuestState>(() => makeStarterState());
   const [hasHydrated, setHasHydrated] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading");
@@ -703,7 +704,7 @@ export default function SideQuestClient() {
           <a href="#quests">Board</a>
           <a href="#party">Party</a>
           <a href="/achievements">Hall</a>
-          <a href="/admin">Admin</a>
+          {isAdmin ? <a href="/admin">Admin</a> : null}
           <SyncPill status={syncStatus} updatedAt={updatedAt} />
           <button type="button" className="ghost-button" onClick={refreshBoard}>
             Refresh
@@ -716,6 +717,7 @@ export default function SideQuestClient() {
           >
             ▶ Tutorial
           </button>
+          <NotificationBell />
         </div>
       </nav>
 

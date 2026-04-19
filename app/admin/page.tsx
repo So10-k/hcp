@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { requireAdmin } from "../lib/auth";
-import { getSideQuestAnalytics } from "../lib/sidequest-db";
+import { ADMIN_BADGES } from "../lib/badge-catalog";
+import {
+  getSideQuestAnalytics,
+  listRecentAdminAudit,
+  listUsersForAdmin
+} from "../lib/sidequest-db";
 import { categoryMeta } from "../seed-data";
+import { AdminUserPanel } from "./admin-user-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const admin = await requireAdmin();
-  const analytics = await getSideQuestAnalytics();
+  const [analytics, users, audit] = await Promise.all([
+    getSideQuestAnalytics(),
+    listUsersForAdmin(),
+    listRecentAdminAudit(25)
+  ]);
   const updated = analytics.updatedAt ? new Date(analytics.updatedAt).toLocaleString() : "Waiting for DATABASE_URL";
 
   return (
@@ -27,10 +37,10 @@ export default async function AdminPage() {
 
       <section className="admin-hero" aria-labelledby="admin-title">
         <div>
-          <p className="eyebrow">Admin analytics</p>
-          <h1 id="admin-title">Quest ops</h1>
+          <p className="eyebrow">Admin ops</p>
+          <h1 id="admin-title">Quest ops console</h1>
           <p>
-            Signed in as {admin.username}. Track board health, category momentum, reward unlocks, and private user records.
+            Signed in as {admin.username}. Hand out stickers, bonus die rolls, and badges — or pause a board that needs a time-out.
           </p>
         </div>
         <div className="admin-source is-live">
@@ -91,45 +101,47 @@ export default async function AdminPage() {
         <div className="admin-panel admin-activity">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Recent signals</p>
-              <h2>Activity</h2>
+              <p className="eyebrow">Admin audit trail</p>
+              <h2>Recent actions</h2>
             </div>
           </div>
-          {analytics.recentActivity.map((item) => (
-            <p key={item.id}>
-              <strong>{item.actor}</strong> {item.text} <span>{item.time}</span>
-            </p>
-          ))}
-        </div>
-
-        <div className="admin-panel admin-users">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">Admin only</p>
-              <h2>User info</h2>
-            </div>
-          </div>
-          {analytics.userInfo.length > 0 ? (
-            analytics.userInfo.map((user) => (
-              <article className="user-row" key={user.id}>
-                <div>
-                  <strong>{user.name}</strong>
-                  <span>@{user.username} · {user.email}</span>
-                </div>
-                <div>
-                  <span>{user.role}</span>
-                  <span>{user.favoriteCategory}</span>
-                </div>
-                <small>Last active {new Date(user.lastActiveAt).toLocaleDateString()}</small>
-              </article>
-            ))
+          {audit.length > 0 ? (
+            <ul className="audit-list">
+              {audit.map((row) => (
+                <li key={row.id}>
+                  <strong>@{row.adminUsername ?? "admin"}</strong>
+                  <span>{humaniseAction(row.action)}</span>
+                  {row.targetUsername ? <em>→ @{row.targetUsername}</em> : null}
+                  <small>{new Date(row.createdAt).toLocaleString()}</small>
+                </li>
+              ))}
+            </ul>
           ) : (
-            <p className="admin-empty">No signups yet.</p>
+            <p className="admin-empty">Nothing yet — every admin action lands here.</p>
           )}
         </div>
       </section>
+
+      <AdminUserPanel initialUsers={users} badges={ADMIN_BADGES} adminId={admin.id} />
     </main>
   );
+}
+
+function humaniseAction(action: string) {
+  switch (action) {
+    case "suspend":
+      return "paused an account";
+    case "unsuspend":
+      return "restored an account";
+    case "award-dice":
+      return "granted bonus die rolls";
+    case "award-badge":
+      return "awarded a badge";
+    case "award-sticker":
+      return "awarded a sticker";
+    default:
+      return action;
+  }
 }
 
 function Metric({ label, note, value }: { label: string; note: string; value: number | string }) {

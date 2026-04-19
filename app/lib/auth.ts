@@ -44,6 +44,10 @@ export async function requireUser(): Promise<AuthUser> {
     redirect("/login");
   }
 
+  if (user.suspendedAt) {
+    redirect("/suspended");
+  }
+
   return user;
 }
 
