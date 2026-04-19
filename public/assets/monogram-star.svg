@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <title>SideQuest — Star Monogram</title>
+  <rect x="6" y="6" width="108" height="108" rx="22" fill="#ffd43d" stroke="#171512" stroke-width="7"></rect>
+  <polygon points="60,22 70,48 98,48 76,64 84,92 60,76 36,92 44,64 22,48 50,48" fill="#171512" stroke="#171512" stroke-width="5" stroke-linejoin="round"></polygon>
+</svg>

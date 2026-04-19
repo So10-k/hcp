@@ -1,13 +1,19 @@
 import Image from "next/image";
 import Link from "next/link";
+import { LteBanner } from "../components/lte-banner";
 import { requireUser } from "../lib/auth";
-import { getSideQuestAnalytics } from "../lib/sidequest-db";
+import { GAMEBOARD_LENGTH } from "../lib/gameboard-config";
+import { getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const analytics = await getSideQuestAnalytics();
+  const [analytics, run] = await Promise.all([
+    getSideQuestAnalytics(),
+    getGameboardRun(user.id)
+  ]);
+  const showLteBanner = !run.completedAt;
 
   return (
     <main className="app-shell personal-shell">
@@ -24,6 +30,14 @@ export default async function DashboardPage() {
           </form>
         </div>
       </nav>
+
+      {showLteBanner ? (
+        <LteBanner
+          rollsAvailable={run.rollsAvailable}
+          position={run.position}
+          length={GAMEBOARD_LENGTH}
+        />
+      ) : null}
 
       <section className="personal-hero" aria-labelledby="personal-title">
         <div>

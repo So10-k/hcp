@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 260" width="480" height="260">
+  <title>SideQuest — Reverse on Ink</title>
+  <rect x="0" y="0" width="480" height="260" fill="#171512"></rect>
+  <defs><clipPath id="c4"><rect x="40" y="50" width="400" height="160" rx="14"></rect></clipPath></defs>
+  <g clip-path="url(#c4)">
+    <rect x="40" y="50" width="400" height="160" fill="#fffaf0"></rect>
+    <rect x="40" y="50" width="110" height="160" fill="#ffd43d"></rect>
+  </g>
+  <rect x="40" y="50" width="400" height="160" rx="14" fill="none" stroke="#171512" stroke-width="7"></rect>
+  <line x1="150" y1="50" x2="150" y2="210" stroke="#171512" stroke-width="6" stroke-dasharray="10 10"></line>
+  <circle cx="150" cy="50" r="13" fill="#171512" stroke="#171512" stroke-width="5"></circle>
+  <circle cx="150" cy="210" r="13" fill="#171512" stroke="#171512" stroke-width="5"></circle>
+  <g transform="translate(95 130) rotate(-90)">
+    <text text-anchor="middle" fill="#171512" font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif" font-weight="900" font-size="17" letter-spacing="5">ADMIT ONE</text>
+  </g>
+  <text x="295" y="146" text-anchor="middle" fill="#171512" font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif" font-weight="900" font-size="46" letter-spacing="-1">Side<tspan fill="#ff5a3d">Quest</tspan></text>
+  <text x="295" y="178" text-anchor="middle" fill="#171512" font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif" font-weight="900" font-size="12" letter-spacing="3">REAL LIFE · QUEST MODE</text>
+</svg>

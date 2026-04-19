@@ -6,10 +6,20 @@ import {
   makeStarterState,
   mergeWithStarterState,
   type Category,
+  type Reward,
   type SideQuestBoard,
   type SideQuestState,
   type SideQuestUser
 } from "../seed-data";
+import {
+  GAMEBOARD_EVENT_ID,
+  GAMEBOARD_LENGTH,
+  GAMEBOARD_REWARD_ID,
+  GAMEBOARD_REWARD_IMAGE,
+  GAMEBOARD_REWARD_NOTE,
+  GAMEBOARD_REWARD_TITLE,
+  GAMEBOARD_TILES
+} from "./gameboard-config";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -163,9 +173,233 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
       CREATE INDEX IF NOT EXISTS sidequest_sessions_user_id_idx
       ON sidequest_sessions (user_id)
     `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_gameboard_runs (
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        event_id text NOT NULL,
+        position integer NOT NULL DEFAULT 0,
+        rolls_earned integer NOT NULL DEFAULT 0,
+        rolls_used integer NOT NULL DEFAULT 0,
+        laps integer NOT NULL DEFAULT 0,
+        completed_at timestamptz,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (user_id, event_id)
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_gameboard_events (
+        id bigserial PRIMARY KEY,
+        user_id text NOT NULL,
+        event_id text NOT NULL,
+        event_type text NOT NULL,
+        payload jsonb,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_gameboard_events_user_idx
+      ON sidequest_gameboard_events (user_id, event_id)
+    `;
   })();
 
   return schemaPromise;
+}
+
+export type GameboardRun = {
+  userId: string;
+  eventId: string;
+  position: number;
+  rollsEarned: number;
+  rollsUsed: number;
+  rollsAvailable: number;
+  laps: number;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GameboardRollResult = {
+  run: GameboardRun;
+  value: number;
+  steps: number[];
+  effect: "forward" | "back" | null;
+  reachedFinish: boolean;
+  newlyCompleted: boolean;
+  rewardId: string | null;
+};
+
+type GameboardRunRow = {
+  user_id: string;
+  event_id: string;
+  position: number;
+  rolls_earned: number;
+  rolls_used: number;
+  laps: number;
+  completed_at: Date | string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+function toGameboardRun(row: GameboardRunRow): GameboardRun {
+  return {
+    userId: row.user_id,
+    eventId: row.event_id,
+    position: row.position,
+    rollsEarned: row.rolls_earned,
+    rollsUsed: row.rolls_used,
+    rollsAvailable: Math.max(0, row.rolls_earned - row.rolls_used),
+    laps: row.laps,
+    completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString()
+  };
+}
+
+async function ensureGameboardRun(userId: string, eventId: string): Promise<GameboardRun> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    INSERT INTO sidequest_gameboard_runs (user_id, event_id)
+    VALUES (${userId}, ${eventId})
+    ON CONFLICT (user_id, event_id) DO NOTHING
+  `;
+  const rows = (await sql`
+    SELECT user_id, event_id, position, rolls_earned, rolls_used, laps,
+           completed_at, created_at, updated_at
+    FROM sidequest_gameboard_runs
+    WHERE user_id = ${userId} AND event_id = ${eventId}
+    LIMIT 1
+  `) as GameboardRunRow[];
+  return toGameboardRun(rows[0]);
+}
+
+export async function getGameboardRun(userId: string, eventId: string = GAMEBOARD_EVENT_ID): Promise<GameboardRun> {
+  return ensureGameboardRun(userId, eventId);
+}
+
+export async function grantGameboardRoll(userId: string, eventId: string = GAMEBOARD_EVENT_ID): Promise<GameboardRun> {
+  const sql = getSql();
+  const current = await ensureGameboardRun(userId, eventId);
+  if (current.completedAt) {
+    return current;
+  }
+  const rows = (await sql`
+    UPDATE sidequest_gameboard_runs
+    SET rolls_earned = rolls_earned + 1, updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${eventId} AND completed_at IS NULL
+    RETURNING user_id, event_id, position, rolls_earned, rolls_used, laps,
+              completed_at, created_at, updated_at
+  `) as GameboardRunRow[];
+  await sql`
+    INSERT INTO sidequest_gameboard_events (user_id, event_id, event_type)
+    VALUES (${userId}, ${eventId}, 'roll-granted')
+  `;
+  return rows[0] ? toGameboardRun(rows[0]) : current;
+}
+
+async function unlockGameboardReward(userId: string) {
+  const board = await loadSideQuestBoard(userId);
+  if (board.state.rewards.some((item) => item.id === GAMEBOARD_REWARD_ID)) {
+    return;
+  }
+  const reward: Reward = {
+    id: GAMEBOARD_REWARD_ID,
+    title: GAMEBOARD_REWARD_TITLE,
+    kind: "sticker",
+    image: GAMEBOARD_REWARD_IMAGE,
+    unlocked: true,
+    note: GAMEBOARD_REWARD_NOTE
+  };
+  const nextState: SideQuestState = {
+    ...board.state,
+    rewards: [reward, ...board.state.rewards]
+  };
+  await saveSideQuestBoard(userId, nextState, "lte-reward-unlocked");
+}
+
+export async function executeGameboardRoll(userId: string, eventId: string = GAMEBOARD_EVENT_ID): Promise<GameboardRollResult> {
+  const sql = getSql();
+  const current = await ensureGameboardRun(userId, eventId);
+
+  if (current.completedAt) {
+    throw new Error("You have already completed this event.");
+  }
+  if (current.rollsAvailable <= 0) {
+    throw new Error("No rolls available — complete a quest to earn one.");
+  }
+
+  const value = 1 + Math.floor(Math.random() * 6);
+  const steps: number[] = [];
+  let pos = current.position;
+  let laps = current.laps;
+
+  for (let i = 0; i < value; i += 1) {
+    pos = (pos + 1) % GAMEBOARD_LENGTH;
+    if (pos === 0) laps += 1;
+    steps.push(pos);
+  }
+
+  const landed = GAMEBOARD_TILES[pos];
+  let effect: "forward" | "back" | null = null;
+  if (landed.kind === "forward") {
+    pos = (pos + 1) % GAMEBOARD_LENGTH;
+    if (pos === 0) laps += 1;
+    steps.push(pos);
+    effect = "forward";
+  } else if (landed.kind === "back") {
+    pos = (pos - 1 + GAMEBOARD_LENGTH) % GAMEBOARD_LENGTH;
+    steps.push(pos);
+    effect = "back";
+  }
+
+  const reachedFinish = steps.includes(0);
+
+  await sql`
+    UPDATE sidequest_gameboard_runs
+    SET position = ${pos},
+        rolls_used = rolls_used + 1,
+        laps = ${laps},
+        updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${eventId}
+  `;
+
+  let newlyCompleted = false;
+  if (reachedFinish) {
+    const completionRows = (await sql`
+      UPDATE sidequest_gameboard_runs
+      SET completed_at = now()
+      WHERE user_id = ${userId} AND event_id = ${eventId} AND completed_at IS NULL
+      RETURNING user_id
+    `) as Array<{ user_id: string }>;
+    newlyCompleted = completionRows.length > 0;
+  }
+
+  await sql`
+    INSERT INTO sidequest_gameboard_events (user_id, event_id, event_type, payload)
+    VALUES (
+      ${userId},
+      ${eventId},
+      ${reachedFinish ? "roll-finish" : "roll"},
+      ${JSON.stringify({ value, steps, effect })}::jsonb
+    )
+  `;
+
+  if (newlyCompleted) {
+    await unlockGameboardReward(userId);
+  }
+
+  const updated = await ensureGameboardRun(userId, eventId);
+
+  return {
+    run: updated,
+    value,
+    steps,
+    effect,
+    reachedFinish,
+    newlyCompleted,
+    rewardId: newlyCompleted ? GAMEBOARD_REWARD_ID : null
+  };
 }
 
 function normalizeState(value: unknown): SideQuestState {

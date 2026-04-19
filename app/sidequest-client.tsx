@@ -3,6 +3,8 @@
 import Image from "next/image";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { LteBanner } from "./components/lte-banner";
+import { GAMEBOARD_LENGTH } from "./lib/gameboard-config";
 import {
   categoryMeta,
   categoryOptions,
@@ -15,6 +17,15 @@ import {
   type SideQuestBoard,
   type SideQuestState
 } from "./seed-data";
+
+type LteRun = {
+  position: number;
+  rollsEarned: number;
+  rollsUsed: number;
+  rollsAvailable: number;
+  laps: number;
+  completedAt: string | null;
+};
 
 const defaultDraft = {
   title: "",
@@ -205,7 +216,36 @@ export default function SideQuestClient() {
   const [boardTitleDraft, setBoardTitleDraft] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [showTutorial, setShowTutorial] = useState(true);
+  const [lteRun, setLteRun] = useState<LteRun | null>(null);
   const saveTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/gameboard", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { run?: LteRun } | null) => {
+        if (cancelled || !data?.run) return;
+        setLteRun(data.run);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function grantLteRoll() {
+    if (!lteRun || lteRun.completedAt) return;
+    fetch("/api/gameboard", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "grant" })
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { run?: LteRun } | null) => {
+        if (data?.run) setLteRun(data.run);
+      })
+      .catch(() => {});
+  }
 
   useEffect(() => {
     let isCancelled = false;
@@ -534,6 +574,7 @@ export default function SideQuestClient() {
       );
     });
     setConfettiTitle(quest.title);
+    grantLteRoll();
   }
 
   function createQuest(event: FormEvent<HTMLFormElement>) {
@@ -671,6 +712,14 @@ export default function SideQuestClient() {
           </button>
         </div>
       </nav>
+
+      {lteRun && !lteRun.completedAt ? (
+        <LteBanner
+          rollsAvailable={lteRun.rollsAvailable}
+          position={lteRun.position}
+          length={GAMEBOARD_LENGTH}
+        />
+      ) : null}
 
       <section className="dashboard-shell" id="quests" aria-labelledby="dashboard-title">
         <div className="dashboard-header">

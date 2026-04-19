@@ -1,14 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 import FeatureVideos from "./components/feature-videos";
+import MobileLanding from "./components/mobile-landing";
 
 export default function Home() {
   return (
-    <main className="app-shell landing-shell">
+    <>
+      <MobileLanding />
+      <main className="app-shell landing-shell landing-desktop-only">
       <nav className="topbar landing-topbar" aria-label="Primary">
         <Link className="brand-lockup" href="/">
-          <span className="brand-mark">SQ</span>
-          <span>SideQuest</span>
+          <img src="/assets/logo-primary.svg" alt="SideQuest" width={100} height={100} />
         </Link>
         <div className="nav-actions">
           <a href="#how">How it works</a>
@@ -127,5 +129,6 @@ export default function Home() {
         </div>
       </section>
     </main>
+    </>
   );
 }
