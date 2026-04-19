@@ -10,8 +10,13 @@ type WedgePrize = {
   color: string;
   textColor: string;
   short: string;
+  icon: string;
+  amountText: string;
+  kindLabel: string;
   weight: number;
 };
+
+const RIM_BULB_COUNT = 16;
 
 type Status = {
   todayKey: string;
@@ -172,30 +177,76 @@ export function DailySpinModal({ open, onClose, onSpun }: Props) {
         ) : status ? (
           <div className="spin-stage">
             <div className="spin-wheel-wrap" aria-hidden="true">
+              <div className="spin-wheel-rim">
+                {Array.from({ length: RIM_BULB_COUNT }).map((_, i) => (
+                  <span
+                    key={i}
+                    className="spin-bulb-stick"
+                    style={
+                      {
+                        transform: `rotate(${i * (360 / RIM_BULB_COUNT)}deg)`,
+                        "--bulb-i": i
+                      } as React.CSSProperties
+                    }
+                    aria-hidden="true"
+                  >
+                    <span className={`spin-bulb${i % 2 === 0 ? " is-warm" : ""}`} />
+                  </span>
+                ))}
+              </div>
+
               <div
                 className={`spin-wheel${spinning ? " is-spinning" : ""}`}
                 ref={wheelRef}
                 style={{ background: conicGradient }}
               >
+                <div className="spin-wheel-divider" aria-hidden="true">
+                  {status.prizes.map((_, index) => (
+                    <span
+                      key={index}
+                      className="spin-divider-line"
+                      style={{ transform: `translateX(-50%) rotate(${index * wedgeAngle - wedgeAngle / 2}deg)` }}
+                    />
+                  ))}
+                </div>
+
                 {status.prizes.map((prize, index) => {
                   const angle = index * wedgeAngle + wedgeAngle / 2;
                   return (
-                    <span
+                    <div
                       key={prize.id}
-                      className="spin-wedge-label"
+                      className="spin-wedge-content"
                       style={{
-                        transform: `rotate(${angle}deg) translateY(-44%)`,
-                        color: prize.textColor
+                        color: prize.textColor,
+                        transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-32%)`
                       }}
                     >
-                      {prize.short}
-                    </span>
+                      <span className="spin-wedge-icon" aria-hidden="true">{prize.icon}</span>
+                      <span className="spin-wedge-amount">{prize.amountText}</span>
+                      <span className="spin-wedge-name">{prize.kindLabel}</span>
+                    </div>
                   );
                 })}
+
+                <div className="spin-wheel-shine" aria-hidden="true" />
               </div>
-              <div className="spin-pointer" aria-hidden="true">▼</div>
+
+              <div className="spin-pointer" aria-hidden="true">
+                <svg viewBox="0 0 40 48" width="40" height="48">
+                  <polygon
+                    points="20,46 4,4 36,4"
+                    fill="#ff5a3d"
+                    stroke="#171512"
+                    strokeWidth="3"
+                    strokeLinejoin="round"
+                  />
+                  <polygon points="20,46 14,16 26,16" fill="#171512" />
+                </svg>
+              </div>
+
               <div className="spin-hub" aria-hidden="true">
-                <span>SQ</span>
+                <span className="spin-hub-mark">★</span>
+                <span className="spin-hub-text">SPIN</span>
               </div>
             </div>
 

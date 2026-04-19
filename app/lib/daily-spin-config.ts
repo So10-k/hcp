@@ -18,18 +18,21 @@ export type SpinPrize = {
   weight: number;          // higher = more likely
   color: string;           // wheel wedge color
   textColor: string;       // wedge label text color
-  short: string;           // ultra-short label inside the wedge
+  short: string;           // ultra-short label (banner/admin/legend)
+  icon: string;            // single emoji shown big on the wedge
+  amountText: string;      // bold prize value shown below the icon
+  kindLabel: string;       // tiny label shown below the value
 };
 
 export const SPIN_PRIZES: SpinPrize[] = [
-  { id: "xp-25",   label: "+25 XP boost",       kind: "xp",     amount: 25, weight: 18, color: "#5fc7f2", textColor: "#171512", short: "+25 XP" },
-  { id: "dice-2",  label: "+2 dice rolls",      kind: "dice",   amount: 2,  weight: 16, color: "#ffd43d", textColor: "#171512", short: "+2 🎲" },
-  { id: "flips-2", label: "+2 flip tokens",     kind: "flips",  amount: 2,  weight: 16, color: "#ff5a3d", textColor: "#171512", short: "+2 🪙" },
-  { id: "xp-75",   label: "+75 XP boost",       kind: "xp",     amount: 75, weight: 12, color: "#44d7a8", textColor: "#171512", short: "+75 XP" },
-  { id: "dice-5",  label: "+5 dice rolls",      kind: "dice",   amount: 5,  weight: 10, color: "#ffd43d", textColor: "#171512", short: "+5 🎲" },
-  { id: "flips-5", label: "+5 flip tokens",     kind: "flips",  amount: 5,  weight: 10, color: "#ff5a3d", textColor: "#171512", short: "+5 🪙" },
-  { id: "sticker", label: "Random sticker drop", kind: "sticker", amount: 0, weight: 14, color: "#ff78b7", textColor: "#171512", short: "✨ STKR" },
-  { id: "jackpot", label: "Jackpot Spinner badge", kind: "jackpot", amount: 0, weight: 4, color: "#171512", textColor: "#ffd43d", short: "★ JCKPT" }
+  { id: "xp-25",   label: "+25 XP boost",          kind: "xp",      amount: 25, weight: 18, color: "#5fc7f2", textColor: "#171512", short: "+25 XP",   icon: "⚡", amountText: "+25",      kindLabel: "XP" },
+  { id: "dice-2",  label: "+2 dice rolls",         kind: "dice",    amount: 2,  weight: 16, color: "#ffd43d", textColor: "#171512", short: "+2 🎲",    icon: "🎲", amountText: "+2",       kindLabel: "Dice" },
+  { id: "flips-2", label: "+2 flip tokens",        kind: "flips",   amount: 2,  weight: 16, color: "#ff5a3d", textColor: "#171512", short: "+2 🪙",    icon: "🪙", amountText: "+2",       kindLabel: "Flips" },
+  { id: "xp-75",   label: "+75 XP boost",          kind: "xp",      amount: 75, weight: 12, color: "#44d7a8", textColor: "#171512", short: "+75 XP",   icon: "💫", amountText: "+75",      kindLabel: "XP" },
+  { id: "dice-5",  label: "+5 dice rolls",         kind: "dice",    amount: 5,  weight: 10, color: "#ff8a3d", textColor: "#171512", short: "+5 🎲",    icon: "🎲", amountText: "+5",       kindLabel: "Dice" },
+  { id: "flips-5", label: "+5 flip tokens",        kind: "flips",   amount: 5,  weight: 10, color: "#b8392b", textColor: "#fffaf0", short: "+5 🪙",    icon: "🪙", amountText: "+5",       kindLabel: "Flips" },
+  { id: "sticker", label: "Random sticker drop",   kind: "sticker", amount: 0,  weight: 14, color: "#ff78b7", textColor: "#171512", short: "✨ STKR",  icon: "✨", amountText: "Sticker",  kindLabel: "Random" },
+  { id: "jackpot", label: "Jackpot Spinner badge", kind: "jackpot", amount: 0,  weight: 4,  color: "#171512", textColor: "#ffd43d", short: "★ JCKPT",  icon: "💎", amountText: "JACKPOT",  kindLabel: "Badge" }
 ];
 
 export const SPIN_TOTAL_WEIGHT = SPIN_PRIZES.reduce((sum, p) => sum + p.weight, 0);

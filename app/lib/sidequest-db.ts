@@ -2048,6 +2048,9 @@ export type DailySpinStatus = {
     color: string;
     textColor: string;
     short: string;
+    icon: string;
+    amountText: string;
+    kindLabel: string;
     weight: number;
   }>;
 };
@@ -2113,6 +2116,9 @@ export async function getDailySpinStatus(userId: string): Promise<DailySpinStatu
       color: p.color,
       textColor: p.textColor,
       short: p.short,
+      icon: p.icon,
+      amountText: p.amountText,
+      kindLabel: p.kindLabel,
       weight: p.weight
     }))
   };
