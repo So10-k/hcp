@@ -3,6 +3,7 @@ import { SideQuestAdReel } from "./SideQuestAdReel";
 import { SideQuestFeatureReel } from "./SideQuestFeatureReel";
 import { SideQuestBoardTutorialReel } from "./SideQuestBoardTutorialReel";
 import { SideQuestIntroReel } from "./SideQuestIntroReel";
+import { SideQuestMorphLoop } from "./SideQuestMorphLoop";
 import { SideQuestSpringLoudReel } from "./SideQuestSpringLoudReel";
 import { SideQuestSpringReel } from "./SideQuestSpringReel";
 import { SideQuestTutorialReel } from "./SideQuestTutorialReel";
@@ -57,6 +58,14 @@ export function RemotionRoot() {
         fps={30}
         width={1920}
         height={1080}
+      />
+      <Composition
+        id="sidequest-morph"
+        component={SideQuestMorphLoop}
+        durationInFrames={150}
+        fps={30}
+        width={720}
+        height={720}
       />
       <Composition
         id="sidequest-create-reel"
