@@ -7630,3 +7630,185 @@ body {
 .admin-inline-reset:hover {
   background: var(--yellow);
 }
+
+/* =========================================================
+   Mobile pass — Apr 19
+   Tightens the signed-in pages for ≤720px and ≤430px so the
+   admin table, event boards, and hall fit a phone cleanly.
+   ========================================================= */
+
+@media (max-width: 720px) {
+  /* --- Dashboard hero (cap the sticker so it doesn't dominate the stack) */
+  .personal-hero img {
+    max-width: 140px;
+    height: auto;
+    justify-self: start;
+  }
+  .personal-tutorial ol li { font-size: 0.95rem; }
+
+  /* --- Hall of achievements ---------------------------------- */
+  .hall-hero { padding: 0 1rem; gap: 1rem; }
+  .hall-hero img { max-width: 130px; height: auto; }
+  .hall-stats {
+    padding: 0 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sticker-book { padding: 0 1rem; }
+  .sticker-book-page { padding: 1rem 1.1rem; }
+  .sticker-book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trophy-wall { padding: 0 1rem; }
+  .trophy-shelf-row { padding: 0 0.5rem; }
+
+  /* --- Spectate banner padding parity ------------------------ */
+  .spectate-banner { padding: 1.1rem; }
+  .spectate-grid { padding: 0 1rem 2rem; }
+
+  /* --- Admin user table — hide low-priority columns + tighten */
+  .admin-user-panel { padding: 1rem 0.85rem; }
+  .admin-user-search { width: 100%; min-width: 0; }
+  .admin-user-table { font-size: 0.78rem; }
+  .admin-user-table th,
+  .admin-user-table td {
+    padding: 0.45rem 0.55rem;
+  }
+  /* Column order: 1 User · 2 Role · 3 Quests · 4 Rewards · 5 SpringSprint
+     6 HighRoller · 7 Combo · 8 DailySpin · 9 Status · 10 Actions */
+  .admin-user-table th:nth-child(3),
+  .admin-user-table td:nth-child(3),
+  .admin-user-table th:nth-child(4),
+  .admin-user-table td:nth-child(4),
+  .admin-user-table th:nth-child(7),
+  .admin-user-table td:nth-child(7) {
+    display: none;
+  }
+  .admin-user-actions {
+    gap: 0.35rem;
+  }
+  .admin-user-actions button,
+  .admin-user-actions .admin-user-action-link {
+    min-height: 44px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.74rem;
+  }
+  .admin-user-stat { font-size: 1rem; }
+
+  /* --- Topbar tap-target floor ------------------------------- */
+  .nav-actions a,
+  .nav-actions button,
+  .nav-actions .ghost-button,
+  .nav-actions .secondary-button {
+    min-height: 44px;
+  }
+
+  /* --- Event boards: nav row gets crowded; let the spin pill
+        + bell breathe by allowing wrap and tightening gap ------ */
+  .nav-actions { gap: 0.4rem; }
+}
+
+@media (max-width: 430px) {
+  /* --- Hall — single-col stats on the smallest phones -------- */
+  .hall-stats { grid-template-columns: 1fr; }
+  .hall-hero h1 { font-size: 2rem; }
+  .sticker-book-page { padding: 0.75rem 0.85rem; }
+  .trophy-frame-mat img { max-width: 100px; height: auto; }
+
+  /* --- Spring Sprint board: tighten so 8x8 stays readable ---- */
+  .gb-shell { padding: 1.5rem 0.75rem 2rem; }
+  .gb-board-card { padding: 0.5rem; }
+  .gb-board { gap: 0.25rem; padding: 0.25rem; }
+  .gb-tile {
+    padding: 0.2rem 0.18rem;
+    gap: 0.05rem;
+    border-width: 2px;
+  }
+  .gb-tile .gb-num {
+    font-size: 0.5rem;
+    padding: 0.05rem 0.2rem;
+    border-width: 1px;
+  }
+  .gb-tile .gb-glyph { font-size: 0.7rem; }
+  .gb-tile .gb-label {
+    font-size: 0.42rem;
+    line-height: 1.05;
+    letter-spacing: 0.02em;
+  }
+  .gb-board-center h2 { font-size: 1.1rem; }
+  .gb-board-center p { font-size: 0.78rem; }
+  .gb-pawn {
+    width: 32px;
+    height: 32px;
+    font-size: 0.6rem;
+    border-width: 2px;
+  }
+
+  /* Smaller die so the side panel fits without horizontal scroll */
+  .gb-die-tilt,
+  .gb-die-cube {
+    width: 80px;
+    height: 80px;
+  }
+  .gb-face { padding: 8px; gap: 2px; }
+  .gb-face-front  { transform: translateZ(40px); }
+  .gb-face-back   { transform: rotateY(180deg) translateZ(40px); }
+  .gb-face-top    { transform: rotateX(90deg) translateZ(40px); }
+  .gb-face-bottom { transform: rotateX(-90deg) translateZ(40px); }
+  .gb-face-right  { transform: rotateY(90deg) translateZ(40px); }
+  .gb-face-left   { transform: rotateY(-90deg) translateZ(40px); }
+  .gb-pip { width: 12px; height: 12px; }
+  .gb-roll-button { width: 100%; }
+
+  /* --- High Roller — narrower coin + full-width buttons ------ */
+  .hr-masthead { padding: 1.2rem 1rem; }
+  .hr-masthead h1 { font-size: 2rem; }
+  .hr-layout { padding: 0 1rem; }
+  .hr-tower-card { padding: 0.6rem; }
+  .hr-tower { padding: 8px; gap: 6px; }
+  .hr-rung {
+    padding: 0.5rem 0.6rem;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .hr-rung-num {
+    width: 30px;
+    height: 30px;
+    font-size: 0.85rem;
+    border-width: 2px;
+  }
+  .hr-coin-perspective,
+  .hr-coin {
+    width: 100px;
+    height: 100px;
+  }
+  .hr-coin-face {
+    font-size: 3rem;
+    border-width: 4px;
+  }
+  .hr-flip-button {
+    width: 100%;
+    min-height: 56px;
+    font-size: 1rem;
+  }
+
+  /* --- Admin user table — keep only User + Actions visible --- */
+  /* (these are added to the 720px hides which already cover 3,4,7) */
+  .admin-user-table th:nth-child(2),
+  .admin-user-table td:nth-child(2),
+  .admin-user-table th:nth-child(5),
+  .admin-user-table td:nth-child(5),
+  .admin-user-table th:nth-child(6),
+  .admin-user-table td:nth-child(6),
+  .admin-user-table th:nth-child(8),
+  .admin-user-table td:nth-child(8),
+  .admin-user-table th:nth-child(9),
+  .admin-user-table td:nth-child(9) {
+    display: none;
+  }
+  .admin-user-actions {
+    gap: 0.3rem;
+  }
+  .admin-user-actions button,
+  .admin-user-actions .admin-user-action-link {
+    font-size: 0.7rem;
+    padding: 0.4rem 0.5rem;
+  }
+}
