@@ -4,7 +4,10 @@ import Image from "next/image";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LteBanner } from "./components/lte-banner";
+import { TutorialPlayer } from "./components/tutorial-player";
 import { GAMEBOARD_LENGTH } from "./lib/gameboard-config";
+
+const BOARD_TUTORIAL_SEEN_KEY = "sidequest_board_tutorial_seen_v1";
 import {
   categoryMeta,
   categoryOptions,
@@ -157,33 +160,6 @@ function parseSteps(value: string) {
   return steps.length > 0 ? steps : ["Pick the first move", "Make progress", "Call it cleared"];
 }
 
-function makeInviteCode(title: string) {
-  const slug = title
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 5);
-  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-
-  return `SQ-${slug || "CREW"}-${suffix}`;
-}
-
-function makeJoinedMember(name: string): SideQuestBoard["members"][number] {
-  const initials = name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-
-  return {
-    id: makeId("member"),
-    name,
-    role: "party member",
-    initials: initials || "YO",
-    color: "#ffd43d"
-  };
-}
-
 function syncBoardFields(state: SideQuestState, boards: SideQuestBoard[], activeBoardId: string): SideQuestState {
   const activeBoard = boards.find((board) => board.id === activeBoardId) ?? boards[0];
 
@@ -217,7 +193,22 @@ export default function SideQuestClient() {
   const [joinCode, setJoinCode] = useState("");
   const [showTutorial, setShowTutorial] = useState(true);
   const [lteRun, setLteRun] = useState<LteRun | null>(null);
+  const [boardTutorialOpen, setBoardTutorialOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
+
+  // Auto-open the board tutorial the first time this user lands on /board.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem(BOARD_TUTORIAL_SEEN_KEY);
+      if (!seen) {
+        setBoardTutorialOpen(true);
+        window.localStorage.setItem(BOARD_TUTORIAL_SEEN_KEY, new Date().toISOString());
+      }
+    } catch {
+      setBoardTutorialOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -440,74 +431,80 @@ export default function SideQuestClient() {
     setState((current) => syncBoardFields(current, current.boards, boardId));
   }
 
-  function createPartyBoardFromTitle(titleInput: string) {
+  async function createPartyBoardFromTitle(titleInput: string) {
     const title = titleInput.trim() || "New party board";
-    const inviteCode = makeInviteCode(title);
-    const board: SideQuestBoard = {
-      id: `party:${inviteCode}`,
-      title,
-      kind: "party",
-      inviteCode,
-      members: [makeJoinedMember("You")],
-      quests: [],
-      activity: [
-        {
-          id: makeId("activity"),
-          actor: "You",
-          text: `opened ${title} for co-op quests.`,
-          time: "Just now"
-        }
-      ],
-      createdAt: new Date().toISOString()
-    };
-
-    setState((current) => syncBoardFields(current, [...current.boards, board], board.id));
-    setBoardTitleDraft("");
-    setSelectedCategory("all");
+    try {
+      const response = await fetch("/api/party/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title })
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { board?: SideQuestBoard; error?: string }
+        | null;
+      if (!response.ok || !data?.board) {
+        setSyncError(data?.error || "Could not create party.");
+        return;
+      }
+      const board = data.board;
+      setState((current) => {
+        const without = current.boards.filter((b) => b.inviteCode.toUpperCase() !== board.inviteCode.toUpperCase());
+        return syncBoardFields(current, [...without, board], board.id);
+      });
+      setBoardTitleDraft("");
+      setSelectedCategory("all");
+      setSyncError(null);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Could not create party.");
+    }
   }
 
   function createPartyBoard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    createPartyBoardFromTitle(boardTitleDraft);
+    void createPartyBoardFromTitle(boardTitleDraft);
   }
 
-  function joinPartyBoard(event: FormEvent<HTMLFormElement>) {
+  async function joinPartyBoard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const cleanCode = joinCode.trim().toUpperCase();
 
     if (!cleanCode || cleanCode === "PERSONAL") {
+      setSyncError("Enter a valid invite code.");
       return;
     }
 
     const existing = state.boards.find((board) => board.inviteCode.toUpperCase() === cleanCode);
-
     if (existing) {
       chooseBoard(existing.id);
       setJoinCode("");
+      setSyncError(null);
       return;
     }
 
-    const board: SideQuestBoard = {
-      id: `party:${cleanCode}`,
-      title: `Party ${cleanCode.slice(-4)}`,
-      kind: "party",
-      inviteCode: cleanCode,
-      members: [makeJoinedMember("You")],
-      quests: [],
-      activity: [
-        {
-          id: makeId("activity"),
-          actor: "You",
-          text: `joined with invite ${cleanCode}.`,
-          time: "Just now"
-        }
-      ],
-      createdAt: new Date().toISOString()
-    };
-
-    setState((current) => syncBoardFields(current, [...current.boards, board], board.id));
-    setJoinCode("");
-    setSelectedCategory("all");
+    try {
+      const response = await fetch("/api/party/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: cleanCode })
+      });
+      const data = (await response.json().catch(() => null)) as
+        | { board?: SideQuestBoard; error?: string }
+        | null;
+      if (!response.ok || !data?.board) {
+        setSyncError(data?.error || "We couldn't find a party with that code.");
+        return;
+      }
+      const board = data.board;
+      setState((current) => {
+        const without = current.boards.filter((b) => b.inviteCode.toUpperCase() !== board.inviteCode.toUpperCase());
+        return syncBoardFields(current, [...without, board], board.id);
+      });
+      setJoinCode("");
+      setSelectedCategory("all");
+      setSyncError(null);
+    } catch (err) {
+      setSyncError(err instanceof Error ? err.message : "Could not join party.");
+    }
   }
 
   function addProgress(questId: string, amount: number) {
@@ -710,6 +707,14 @@ export default function SideQuestClient() {
           <button type="button" className="ghost-button" onClick={refreshBoard}>
             Refresh
           </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setBoardTutorialOpen(true)}
+            aria-label="Rewatch board tutorial"
+          >
+            ▶ Tutorial
+          </button>
         </div>
       </nav>
 
@@ -882,6 +887,12 @@ export default function SideQuestClient() {
       ) : null}
 
       {confettiTitle ? <Confetti title={confettiTitle} /> : null}
+
+      <TutorialPlayer
+        open={boardTutorialOpen}
+        onClose={() => setBoardTutorialOpen(false)}
+        src="/sidequest-board-tutorial.mp4"
+      />
     </main>
   );
 }

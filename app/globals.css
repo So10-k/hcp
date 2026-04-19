@@ -4677,3 +4677,270 @@ body {
   .lte-banner-title { font-size: 0.92rem; }
   .lte-banner-cta { padding: 0.5rem 0.7rem; font-size: 0.82rem; }
 }
+
+/* =========================================================
+   Tutorial player — overlays the gameboard on first visit
+   and any time the user hits the "Rewatch tutorial" button.
+   ========================================================= */
+.tutorial-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(23, 21, 18, 0);
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.95);
+  transition:
+    opacity 320ms cubic-bezier(0.3, 0.8, 0.3, 1),
+    background 380ms ease,
+    transform 320ms cubic-bezier(0.3, 0.8, 0.3, 1);
+}
+
+.tutorial-overlay.is-visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: scale(1);
+  background: rgba(23, 21, 18, 0.72);
+}
+
+/* Synchronized dismiss — matches the 1.2s radial collapse in the video. */
+.tutorial-overlay.is-closing {
+  pointer-events: none;
+  background: rgba(23, 21, 18, 0);
+  transition:
+    opacity 1.2s ease,
+    background 1.2s ease;
+  opacity: 0.01;
+}
+
+.tutorial-frame {
+  width: min(1080px, 94vw);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.7rem;
+  border: 6px solid var(--ink);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 14px 14px 0 var(--ink);
+  transform: scale(1);
+  opacity: 1;
+  transition:
+    transform 1.2s cubic-bezier(0.6, 0, 0.3, 1),
+    opacity 1.2s ease,
+    border-color 1.2s ease,
+    box-shadow 1.2s ease;
+}
+
+.tutorial-overlay.is-closing .tutorial-frame {
+  transform: scale(0.04);
+  opacity: 0;
+  border-color: rgba(23, 21, 18, 0);
+  box-shadow: 0 0 0 rgba(23, 21, 18, 0);
+}
+
+.tutorial-frame-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.1rem 0.3rem 0.15rem;
+}
+
+.tutorial-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.7rem;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 900;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.tutorial-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: tutorial-dot-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tutorial-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.35); opacity: 0.7; }
+}
+
+.tutorial-skip {
+  padding: 0.5rem 0.85rem;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: 3px 3px 0 var(--ink);
+  font: inherit;
+  font-weight: 900;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.tutorial-skip:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.tutorial-video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 4px solid var(--ink);
+  border-radius: 12px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.tutorial-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--paper);
+}
+
+.tutorial-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.2rem 0.1rem;
+}
+
+.tutorial-ctl {
+  padding: 0.55rem 0.9rem;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--white);
+  box-shadow: 3px 3px 0 var(--ink);
+  font: inherit;
+  font-weight: 900;
+  font-size: 0.88rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.tutorial-ctl-primary {
+  background: var(--mint);
+  min-width: 86px;
+}
+
+.tutorial-ctl:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.tutorial-progress {
+  flex: 1;
+  height: 18px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  background: var(--white);
+  overflow: hidden;
+  box-shadow: inset 0 2px 0 rgba(23, 21, 18, 0.1);
+}
+
+.tutorial-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--red);
+  transition: width 120ms linear;
+}
+
+/* Rewatch button on the gameboard side panel */
+.tutorial-rewatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.9rem;
+  margin-top: 0.75rem;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--sky);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  font-size: 0.86rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.tutorial-rewatch:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+.tutorial-rewatch::before {
+  content: "▶";
+  font-size: 0.8em;
+}
+
+@media (max-width: 720px) {
+  .tutorial-frame { padding: 0.55rem; }
+  .tutorial-controls { flex-wrap: wrap; }
+  .tutorial-progress { order: 3; flex-basis: 100%; }
+}
+
+/* Landing-page intro trigger button */
+.intro-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem 1.15rem;
+  border: 4px solid var(--ink);
+  border-radius: 10px;
+  background: var(--sky);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  font-size: 0.96rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 5px 5px 0 var(--ink);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+.intro-trigger:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 7px 7px 0 var(--ink);
+  background: var(--mint);
+}
+.intro-trigger:active {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.intro-trigger-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--yellow);
+  font-size: 0.66rem;
+}
+
+.intro-trigger-pill {
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+}

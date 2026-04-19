@@ -2,11 +2,14 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TutorialPlayer } from "../components/tutorial-player";
 import {
   GAMEBOARD_REWARD_IMAGE,
   GAMEBOARD_REWARD_TITLE,
   type GameboardTile
 } from "../lib/gameboard-config";
+
+const TUTORIAL_SEEN_KEY = "sidequest_gameboard_tutorial_seen_v1";
 
 type Run = {
   userId: string;
@@ -90,6 +93,23 @@ export default function GameboardClient({
   const cubeRef = useRef<HTMLDivElement | null>(null);
   const cubeRotRef = useRef({ x: 0, y: 0 });
   const displayPosRef = useRef(initialRun.position);
+
+  // First-visit tutorial. Show the explainer once per browser; a "Rewatch"
+  // button re-opens it on demand.
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem(TUTORIAL_SEEN_KEY);
+      if (!seen) {
+        setTutorialOpen(true);
+        window.localStorage.setItem(TUTORIAL_SEEN_KEY, new Date().toISOString());
+      }
+    } catch {
+      // localStorage disabled — just open once per mount.
+      setTutorialOpen(true);
+    }
+  }, []);
 
   const placePawn = useCallback((idx: number, bump = false) => {
     const board = boardRef.current;
@@ -304,6 +324,14 @@ export default function GameboardClient({
                 Laps {run.laps}
               </span>
             </div>
+            <button
+              type="button"
+              className="tutorial-rewatch"
+              onClick={() => setTutorialOpen(true)}
+              aria-label="Rewatch tutorial"
+            >
+              Rewatch tutorial
+            </button>
           </section>
 
           <section className="gb-panel">
@@ -381,6 +409,8 @@ export default function GameboardClient({
           </div>
         </div>
       ) : null}
+
+      <TutorialPlayer open={tutorialOpen} onClose={() => setTutorialOpen(false)} />
     </>
   );
 }

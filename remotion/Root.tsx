@@ -1,6 +1,11 @@
 import { Composition } from "remotion";
 import { SideQuestAdReel } from "./SideQuestAdReel";
 import { SideQuestFeatureReel } from "./SideQuestFeatureReel";
+import { SideQuestBoardTutorialReel } from "./SideQuestBoardTutorialReel";
+import { SideQuestIntroReel } from "./SideQuestIntroReel";
+import { SideQuestSpringLoudReel } from "./SideQuestSpringLoudReel";
+import { SideQuestSpringReel } from "./SideQuestSpringReel";
+import { SideQuestTutorialReel } from "./SideQuestTutorialReel";
 
 export function RemotionRoot() {
   return (
@@ -9,6 +14,46 @@ export function RemotionRoot() {
         id="sidequest-ad"
         component={SideQuestAdReel}
         durationInFrames={300}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-spring"
+        component={SideQuestSpringReel}
+        durationInFrames={900}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-spring-loud"
+        component={SideQuestSpringLoudReel}
+        durationInFrames={900}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-tutorial"
+        component={SideQuestTutorialReel}
+        durationInFrames={750}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-board-tutorial"
+        component={SideQuestBoardTutorialReel}
+        durationInFrames={750}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-intro"
+        component={SideQuestIntroReel}
+        durationInFrames={750}
         fps={30}
         width={1920}
         height={1080}

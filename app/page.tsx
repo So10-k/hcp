@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import FeatureVideos from "./components/feature-videos";
+import { IntroTrigger } from "./components/intro-trigger";
 import MobileLanding from "./components/mobile-landing";
 
 export default function Home() {
@@ -29,6 +30,7 @@ export default function Home() {
             <Link className="primary-button" href="/signup">
               Sign up
             </Link>
+            <IntroTrigger />
             <Link className="secondary-button" href="#reels">
               Watch reels
             </Link>

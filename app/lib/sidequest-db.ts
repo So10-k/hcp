@@ -5,6 +5,7 @@ import {
   categoryOptions,
   makeStarterState,
   mergeWithStarterState,
+  PERSONAL_BOARD_ID,
   type Category,
   type Reward,
   type SideQuestBoard,
@@ -200,6 +201,29 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
     await sql`
       CREATE INDEX IF NOT EXISTS sidequest_gameboard_events_user_idx
       ON sidequest_gameboard_events (user_id, event_id)
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_parties (
+        invite_code text PRIMARY KEY,
+        title text NOT NULL,
+        owner_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        state jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_party_members (
+        invite_code text NOT NULL REFERENCES sidequest_parties(invite_code) ON DELETE CASCADE,
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        role text NOT NULL DEFAULT 'member',
+        joined_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (invite_code, user_id)
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_party_members_user_idx
+      ON sidequest_party_members (user_id)
     `;
   })();
 
@@ -505,6 +529,22 @@ export async function signUpSideQuestUser(input: SignUpInput) {
 
   validatePassword(input.password);
 
+  // Friendly pre-checks for duplicate email/username. The DB also has unique
+  // constraints (email column + lower(username) partial index) as a safety
+  // net for races, but these give a human-readable error first.
+  const existingEmailRows = (await sql`
+    SELECT id FROM sidequest_users WHERE lower(email) = ${email} LIMIT 1
+  `) as Array<{ id: string }>;
+  if (existingEmailRows.length > 0) {
+    throw new Error("An account with that email already exists. Try logging in instead.");
+  }
+  const existingUsernameRows = (await sql`
+    SELECT id FROM sidequest_users WHERE lower(username) = ${username} LIMIT 1
+  `) as Array<{ id: string }>;
+  if (existingUsernameRows.length > 0) {
+    throw new Error("That username is already taken — try another.");
+  }
+
   const adminRows = (await sql`
     SELECT COUNT(*)::int AS count
     FROM sidequest_users
@@ -512,50 +552,64 @@ export async function signUpSideQuestUser(input: SignUpInput) {
   `) as Array<{ count: number }>;
   const role = adminRows[0]?.count === 0 ? "admin" : "member";
 
-  const rows = (await sql`
-    INSERT INTO sidequest_users (
-      id,
-      name,
-      email,
-      username,
-      password_hash,
-      role,
-      age_range,
-      school_year,
-      favorite_category,
-      board_role,
-      joined_at,
-      last_active_at
-    )
-    VALUES (
-      ${randomUUID()},
-      ${name},
-      ${email},
-      ${username},
-      ${hashPassword(input.password)},
-      ${role},
-      '13-18',
-      'student',
-      ${safeCategory},
-      'quester',
-      now(),
-      now()
-    )
-    RETURNING
-      id,
-      name,
-      email,
-      username,
-      role,
-      age_range,
-      school_year,
-      favorite_category,
-      board_role,
-      quests_created,
-      quests_completed,
-      joined_at,
-      last_active_at
-  `) as UserRow[];
+  let rows: UserRow[];
+  try {
+    rows = (await sql`
+      INSERT INTO sidequest_users (
+        id,
+        name,
+        email,
+        username,
+        password_hash,
+        role,
+        age_range,
+        school_year,
+        favorite_category,
+        board_role,
+        joined_at,
+        last_active_at
+      )
+      VALUES (
+        ${randomUUID()},
+        ${name},
+        ${email},
+        ${username},
+        ${hashPassword(input.password)},
+        ${role},
+        '13-18',
+        'student',
+        ${safeCategory},
+        'quester',
+        now(),
+        now()
+      )
+      RETURNING
+        id,
+        name,
+        email,
+        username,
+        role,
+        age_range,
+        school_year,
+        favorite_category,
+        board_role,
+        quests_created,
+        quests_completed,
+        joined_at,
+        last_active_at
+    `) as UserRow[];
+  } catch (error) {
+    // Translate raw unique-constraint errors from the DB into friendly copy
+    // (covers the race where two signups slip past the pre-check).
+    const message = error instanceof Error ? error.message : String(error);
+    if (/sidequest_users_email/i.test(message) || /email/i.test(message) && /unique/i.test(message)) {
+      throw new Error("An account with that email already exists. Try logging in instead.");
+    }
+    if (/sidequest_users_username_unique/i.test(message) || /username/i.test(message) && /unique/i.test(message)) {
+      throw new Error("That username is already taken — try another.");
+    }
+    throw error;
+  }
 
   await sql`
     INSERT INTO sidequest_board_events (board_id, event_type)
@@ -691,15 +745,22 @@ export async function loadSideQuestBoard(userId: string): Promise<BoardLoadResul
   `) as Array<{ state: unknown; updated_at: Date | string }>;
 
   if (rows[0]) {
+    const base = normalizeState(rows[0].state);
+    const { state: reconciled, changed } = await reconcilePartyBoards(userId, base);
+    if (changed) {
+      // Persist the cleaned-up jsonb so the fix sticks for future loads.
+      return saveSideQuestBoard(userId, reconciled, "party-sync");
+    }
     return {
       databaseReady: true,
-      state: normalizeState(rows[0].state),
+      state: reconciled,
       updatedAt: new Date(rows[0].updated_at).toISOString()
     };
   }
 
   const starter = makeStarterState();
-  return saveSideQuestBoard(userId, starter, "starter-board-created");
+  const { state: reconciled } = await reconcilePartyBoards(userId, starter);
+  return saveSideQuestBoard(userId, reconciled, "starter-board-created");
 }
 
 export async function saveSideQuestBoard(userId: string, state: SideQuestState, eventType = "save"): Promise<BoardLoadResult> {
@@ -708,6 +769,9 @@ export async function saveSideQuestBoard(userId: string, state: SideQuestState, 
   const boardId = boardIdForUser(userId);
 
   await ensureSideQuestSchema(sql);
+  // Fan any local edits on party boards out to the authoritative party
+  // rows first so other members see the change on their next refresh.
+  await propagatePartyEdits(userId, normalized);
   const rows = (await sql`
     INSERT INTO sidequest_boards (id, state, updated_at)
     VALUES (${boardId}, ${JSON.stringify(normalized)}::jsonb, now())
@@ -814,4 +878,385 @@ export async function getSideQuestAnalytics(): Promise<AnalyticsSnapshot> {
     recentActivity,
     streak: board.state.streak
   };
+}
+
+// ===========================================================================
+// Parties — server-authoritative co-op boards keyed by invite code.
+// ===========================================================================
+
+const PARTY_MEMBER_COLORS = [
+  "#ff5a3d",
+  "#ffd43d",
+  "#44d7a8",
+  "#5fc7f2",
+  "#ff78b7",
+  "#4667ff",
+  "#f8efd9",
+  "#eadbb9"
+];
+
+type PartyState = {
+  members: SideQuestBoard["members"];
+  quests: SideQuestBoard["quests"];
+  activity: SideQuestBoard["activity"];
+  createdAt: string;
+};
+
+type PartyRow = {
+  invite_code: string;
+  title: string;
+  owner_id: string;
+  state: unknown;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+function initialsFrom(name: string) {
+  const clean = (name || "").trim();
+  if (!clean) return "QQ";
+  return clean
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "QQ";
+}
+
+function colorForIndex(index: number) {
+  return PARTY_MEMBER_COLORS[index % PARTY_MEMBER_COLORS.length];
+}
+
+function boardIdForParty(code: string) {
+  return `party:${code}`;
+}
+
+function randomInviteCode(title = "CREW") {
+  const slug = title.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 5) || "CREW";
+  const suffix = randomBytes(3).toString("base64").replace(/[^A-Z0-9]/gi, "").slice(0, 4).toUpperCase();
+  return `SQ-${slug}-${suffix || "CREW"}`;
+}
+
+async function ensureUniqueInviteCode(sql: Sql, title: string) {
+  for (let i = 0; i < 24; i += 1) {
+    const code = randomInviteCode(title);
+    const rows = (await sql`
+      SELECT 1 FROM sidequest_parties WHERE invite_code = ${code} LIMIT 1
+    `) as Array<{ "?column?": number }>;
+    if (rows.length === 0) return code;
+  }
+  throw new Error("Could not allocate a free invite code. Try again.");
+}
+
+function normalizePartyState(raw: unknown, fallback: PartyState): PartyState {
+  if (!raw || typeof raw !== "object") return fallback;
+  const value = raw as Partial<PartyState>;
+  return {
+    members: Array.isArray(value.members) ? value.members : fallback.members,
+    quests: Array.isArray(value.quests) ? value.quests : fallback.quests,
+    activity: Array.isArray(value.activity) ? value.activity : fallback.activity,
+    createdAt: typeof value.createdAt === "string" ? value.createdAt : fallback.createdAt
+  };
+}
+
+async function composePartyMembers(sql: Sql, code: string) {
+  const rows = (await sql`
+    SELECT
+      u.id,
+      u.name,
+      u.username,
+      u.favorite_category,
+      m.role,
+      m.joined_at
+    FROM sidequest_party_members m
+    INNER JOIN sidequest_users u ON u.id = m.user_id
+    WHERE m.invite_code = ${code}
+    ORDER BY m.joined_at ASC
+  `) as Array<{
+    id: string;
+    name: string;
+    username: string | null;
+    favorite_category: string;
+    role: string;
+    joined_at: Date | string;
+  }>;
+  return rows.map((row, index) => ({
+    id: row.id,
+    name: row.name || row.username || "Quester",
+    role: row.role === "owner" ? "party captain" : "party member",
+    initials: initialsFrom(row.name || row.username || "Quester"),
+    color: colorForIndex(index)
+  }));
+}
+
+async function partyRowToBoard(sql: Sql, row: PartyRow): Promise<SideQuestBoard> {
+  const fallback: PartyState = {
+    members: [],
+    quests: [],
+    activity: [],
+    createdAt: new Date(row.created_at).toISOString()
+  };
+  const state = normalizePartyState(row.state, fallback);
+  // Always rebuild members from the canonical membership table so the
+  // displayed party matches who's actually joined.
+  const members = await composePartyMembers(sql, row.invite_code);
+  return {
+    id: boardIdForParty(row.invite_code),
+    title: row.title,
+    kind: "party",
+    inviteCode: row.invite_code,
+    members,
+    quests: state.quests,
+    activity: state.activity,
+    createdAt: state.createdAt
+  };
+}
+
+export async function createPartyForUser(userId: string, titleInput: string): Promise<SideQuestBoard> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const title = (titleInput || "").trim().slice(0, 48) || "New party board";
+  const code = await ensureUniqueInviteCode(sql, title);
+
+  const now = new Date().toISOString();
+  const initialState: PartyState = {
+    members: [],
+    quests: [],
+    activity: [
+      {
+        id: `activity-${code}-start`,
+        actor: "You",
+        text: `opened ${title} for co-op quests.`,
+        time: "Just now"
+      }
+    ],
+    createdAt: now
+  };
+
+  await sql`
+    INSERT INTO sidequest_parties (invite_code, title, owner_id, state)
+    VALUES (${code}, ${title}, ${userId}, ${JSON.stringify(initialState)}::jsonb)
+  `;
+  await sql`
+    INSERT INTO sidequest_party_members (invite_code, user_id, role)
+    VALUES (${code}, ${userId}, 'owner')
+  `;
+
+  const rows = (await sql`
+    SELECT invite_code, title, owner_id, state, created_at, updated_at
+    FROM sidequest_parties WHERE invite_code = ${code}
+  `) as PartyRow[];
+  return partyRowToBoard(sql, rows[0]);
+}
+
+export async function joinPartyForUser(userId: string, codeInput: string): Promise<SideQuestBoard> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const code = (codeInput || "").trim().toUpperCase();
+  if (!code || code === "PERSONAL") {
+    throw new Error("Enter a valid invite code.");
+  }
+
+  const rows = (await sql`
+    SELECT invite_code, title, owner_id, state, created_at, updated_at
+    FROM sidequest_parties WHERE invite_code = ${code} LIMIT 1
+  `) as PartyRow[];
+  if (rows.length === 0) {
+    throw new Error("We couldn't find a party with that code.");
+  }
+
+  await sql`
+    INSERT INTO sidequest_party_members (invite_code, user_id, role)
+    VALUES (${code}, ${userId}, 'member')
+    ON CONFLICT (invite_code, user_id) DO NOTHING
+  `;
+
+  const board = await partyRowToBoard(sql, rows[0]);
+
+  // Append a small join activity event without stomping the party state.
+  const userRows = (await sql`
+    SELECT name, username FROM sidequest_users WHERE id = ${userId} LIMIT 1
+  `) as Array<{ name: string; username: string | null }>;
+  const actor = userRows[0]?.name || userRows[0]?.username || "A quester";
+  const next = {
+    members: board.members,
+    quests: board.quests,
+    activity: [
+      {
+        id: `activity-${code}-join-${Date.now()}`,
+        actor,
+        text: `joined the party.`,
+        time: "Just now"
+      },
+      ...board.activity
+    ].slice(0, 8),
+    createdAt: board.createdAt
+  } satisfies PartyState;
+  await sql`
+    UPDATE sidequest_parties
+    SET state = ${JSON.stringify(next)}::jsonb, updated_at = now()
+    WHERE invite_code = ${code}
+  `;
+  return { ...board, activity: next.activity };
+}
+
+export async function getUserPartyBoards(userId: string): Promise<SideQuestBoard[]> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT p.invite_code, p.title, p.owner_id, p.state, p.created_at, p.updated_at
+    FROM sidequest_parties p
+    INNER JOIN sidequest_party_members m ON m.invite_code = p.invite_code
+    WHERE m.user_id = ${userId}
+    ORDER BY p.updated_at DESC
+  `) as PartyRow[];
+  const boards: SideQuestBoard[] = [];
+  for (const row of rows) {
+    boards.push(await partyRowToBoard(sql, row));
+  }
+  return boards;
+}
+
+export async function savePartyState(userId: string, code: string, board: SideQuestBoard): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const memberRows = (await sql`
+    SELECT 1 FROM sidequest_party_members
+    WHERE invite_code = ${code} AND user_id = ${userId} LIMIT 1
+  `) as Array<{ "?column?": number }>;
+  if (memberRows.length === 0) return;
+
+  const next: PartyState = {
+    members: board.members,
+    quests: board.quests,
+    activity: board.activity,
+    createdAt: board.createdAt
+  };
+  await sql`
+    UPDATE sidequest_parties
+    SET
+      state = ${JSON.stringify(next)}::jsonb,
+      title = ${board.title},
+      updated_at = now()
+    WHERE invite_code = ${code}
+  `;
+}
+
+/**
+ * Merge the server-authoritative party boards into the user's jsonb state
+ * and drop any stale/invalid party boards that only existed locally. Also
+ * migrates legacy local-only party boards: if a user's state.boards[] has
+ * a `party:...` entry whose code has no backing party row, we create the
+ * party server-side with this user as owner so their quests aren't lost.
+ *
+ * Returns the reconciled state + a flag noting whether anything changed
+ * (so callers can persist the cleanup back to the jsonb blob).
+ */
+async function reconcilePartyBoards(
+  userId: string,
+  state: SideQuestState
+): Promise<{ state: SideQuestState; changed: boolean }> {
+  const sql = getSql();
+  const realBoards = await getUserPartyBoards(userId);
+  const realByCode = new Map(realBoards.map((b) => [b.inviteCode.toUpperCase(), b]));
+
+  let changed = false;
+  const nextBoards: SideQuestBoard[] = [];
+
+  for (const board of state.boards) {
+    if (board.kind === "personal" || board.id === PERSONAL_BOARD_ID) {
+      nextBoards.push(board);
+      continue;
+    }
+    const code = (board.inviteCode || "").toUpperCase();
+    if (!code || code === "PERSONAL") {
+      // Malformed party board — drop it.
+      changed = true;
+      continue;
+    }
+    const real = realByCode.get(code);
+    if (real) {
+      // Replace the user's cached copy with the server snapshot so the
+      // title, members, quests, and activity all agree.
+      nextBoards.push(real);
+      realByCode.delete(code);
+      continue;
+    }
+
+    // No server record for this code. Try to migrate the user's local-only
+    // board into a real party with them as owner, preserving their quests.
+    try {
+      const existingRows = (await sql`
+        SELECT 1 FROM sidequest_parties WHERE invite_code = ${code} LIMIT 1
+      `) as Array<{ "?column?": number }>;
+      if (existingRows.length > 0) {
+        // Party exists but user isn't a member — drop the cached board.
+        changed = true;
+        continue;
+      }
+      const migratedState: PartyState = {
+        members: [],
+        quests: Array.isArray(board.quests) ? board.quests : [],
+        activity: Array.isArray(board.activity) ? board.activity : [],
+        createdAt: board.createdAt || new Date().toISOString()
+      };
+      await sql`
+        INSERT INTO sidequest_parties (invite_code, title, owner_id, state)
+        VALUES (${code}, ${board.title || "Party board"}, ${userId}, ${JSON.stringify(migratedState)}::jsonb)
+      `;
+      await sql`
+        INSERT INTO sidequest_party_members (invite_code, user_id, role)
+        VALUES (${code}, ${userId}, 'owner')
+        ON CONFLICT (invite_code, user_id) DO NOTHING
+      `;
+      const reloaded = (await sql`
+        SELECT invite_code, title, owner_id, state, created_at, updated_at
+        FROM sidequest_parties WHERE invite_code = ${code} LIMIT 1
+      `) as PartyRow[];
+      nextBoards.push(await partyRowToBoard(sql, reloaded[0]));
+      changed = true;
+    } catch {
+      // Migration failed — safest to drop the stale entry than surface a broken one.
+      changed = true;
+    }
+  }
+
+  // Any real party the user is a member of that wasn't in their cached
+  // state yet (e.g. they joined on a different device) — append it.
+  for (const extra of realByCode.values()) {
+    nextBoards.push(extra);
+    changed = true;
+  }
+
+  // Ensure activeBoardId still resolves; otherwise fall back to personal.
+  const activeExists = nextBoards.some((b) => b.id === state.activeBoardId);
+  const nextActive = activeExists ? state.activeBoardId : PERSONAL_BOARD_ID;
+
+  return {
+    state: {
+      ...state,
+      boards: nextBoards,
+      activeBoardId: nextActive
+    },
+    changed: changed || nextActive !== state.activeBoardId
+  };
+}
+
+/**
+ * Sync any in-state party boards that the user edited (e.g. added a quest,
+ * completed a quest) back into the server-authoritative sidequest_parties
+ * rows. Runs on every save so remote members see fresh state after a refresh.
+ */
+async function propagatePartyEdits(userId: string, state: SideQuestState): Promise<void> {
+  for (const board of state.boards) {
+    if (board.kind !== "party") continue;
+    const code = (board.inviteCode || "").toUpperCase();
+    if (!code || code === "PERSONAL") continue;
+    try {
+      await savePartyState(userId, code, { ...board, inviteCode: code });
+    } catch {
+      // Non-fatal — persisting the user's personal state should not fail
+      // because a party sync had trouble.
+    }
+  }
 }

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import FeatureVideos from "./feature-videos";
+import { IntroTrigger } from "./intro-trigger";
 
 export default function MobileLanding() {
   return (
@@ -29,6 +30,8 @@ export default function MobileLanding() {
             How it works
           </Link>
         </div>
+
+        <IntroTrigger variant="pill" />
 
         <p className="mobile-safety">Private boards. No public ranks.</p>
 
