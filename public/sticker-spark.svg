@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <title>SideQuest — Paint Flare sticker (Creative)</title>
+  <rect x="8" y="8" width="204" height="204" rx="30" fill="#ff78b7" stroke="#171512" stroke-width="7"/>
+  <rect x="24" y="22" width="64" height="16" rx="8" fill="#ffffff" opacity="0.45"/>
+  <path d="M 110 28 C 118 78 146 92 192 100 C 146 108 118 122 110 172 C 102 122 74 108 28 100 C 74 92 102 78 110 28 Z"
+        fill="#ffd43d" stroke="#171512" stroke-width="6" stroke-linejoin="round"/>
+  <circle cx="110" cy="100" r="18" fill="#ff5a3d" stroke="#171512" stroke-width="5"/>
+  <circle cx="104" cy="96" r="4" fill="#ffffff"/>
+  <circle cx="98" cy="150" r="10" fill="#44d7a8" stroke="#171512" stroke-width="4"/>
+  <circle cx="150" cy="60" r="8" fill="#5fc7f2" stroke="#171512" stroke-width="4"/>
+  <circle cx="40" cy="58" r="6" fill="#ffffff" stroke="#171512" stroke-width="3"/>
+  <circle cx="174" cy="162" r="6" fill="#ffffff" stroke="#171512" stroke-width="3"/>
+  <path d="M 66 170 Q 80 168 94 174" stroke="#171512" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M 130 38 Q 140 40 150 46" stroke="#171512" stroke-width="3" fill="none" stroke-linecap="round"/>
+</svg>

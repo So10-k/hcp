@@ -49,9 +49,9 @@ export default function MobileLanding() {
             <small>+100 XP</small>
           </article>
           <div className="mobile-preview-rewards" aria-label="Reward shelf">
-            <Image src="/sticker-star.png" alt="" width={56} height={56} />
-            <Image src="/sticker-bolt.png" alt="" width={56} height={56} />
-            <Image src="/sticker-spark.png" alt="" width={56} height={56} />
+            <Image src="/sticker-star.svg" alt="" width={56} height={56} />
+            <Image src="/sticker-bolt.svg" alt="" width={56} height={56} />
+            <Image src="/sticker-spark.svg" alt="" width={56} height={56} />
             <strong>Confetti clear</strong>
           </div>
         </div>

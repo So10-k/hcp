@@ -24,6 +24,7 @@ export default async function DashboardPage() {
         </Link>
         <div className="nav-actions">
           <Link href="/board">My board</Link>
+          <Link href="/achievements">Hall</Link>
           <Link href="/admin">Admin</Link>
           <form action="/api/logout" method="post">
             <button type="submit" className="ghost-button">Log out</button>
@@ -55,7 +56,7 @@ export default async function DashboardPage() {
             </Link>
           </div>
         </div>
-        <Image src="/sticker-shield.png" alt="" width={180} height={180} priority />
+        <Image src="/sticker-shield.svg" alt="" width={180} height={180} priority />
       </section>
 
       <section className="personal-grid" aria-label="Personal dashboard">

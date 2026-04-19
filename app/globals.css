@@ -5095,3 +5095,415 @@ body {
     transform: rotate(-1deg);
   }
 }
+
+/* =========================================================
+   Hall of Achievements — sticker book + trophy shelves
+   ========================================================= */
+.hall-shell {
+  padding-bottom: 4rem;
+}
+
+.hall-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2rem;
+  max-width: calc(1440px - 4rem);
+  margin: 2rem auto 1.5rem;
+  padding: 0 2rem;
+}
+.hall-hero h1 {
+  margin: 0.5rem 0 0;
+  font-size: clamp(2.25rem, 4.5vw, 3.75rem);
+  line-height: 0.96;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  text-shadow: 5px 5px 0 var(--yellow);
+  max-width: 16ch;
+}
+.hall-hero-sub {
+  margin-top: 1rem;
+  max-width: 56ch;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.hall-hero img {
+  transform: rotate(6deg);
+  filter: drop-shadow(6px 6px 0 var(--ink));
+}
+
+.hall-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  max-width: calc(1440px - 4rem);
+  margin: 0 auto 2rem;
+  padding: 0 2rem;
+}
+.hall-stats .personal-card {
+  padding: 1rem 1.1rem;
+  min-height: unset;
+}
+.hall-stats .personal-card strong {
+  font-size: 2.2rem;
+}
+
+/* Sticker book */
+.sticker-book {
+  max-width: calc(1440px - 4rem);
+  margin: 0 auto 2.5rem;
+  padding: 0 2rem;
+}
+.sticker-book-head {
+  margin-bottom: 1rem;
+}
+.sticker-book-head h2 {
+  margin: 0.3rem 0 0;
+  font-size: 2rem;
+  text-transform: uppercase;
+}
+
+.sticker-book-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: stretch;
+  border: 5px solid var(--ink);
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0) 38%),
+    var(--surface);
+  box-shadow: 12px 12px 0 var(--ink);
+  overflow: hidden;
+}
+
+.sticker-book-page {
+  position: relative;
+  padding: 1.6rem 1.8rem 1.8rem;
+  background:
+    linear-gradient(90deg, rgba(23,21,18,0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(23,21,18,0.04) 1px, transparent 1px),
+    var(--surface);
+  background-size: 32px 32px;
+}
+.sticker-book-page-left { border-right: 3px solid rgba(23,21,18,0.12); }
+.sticker-book-page-right { border-left: 3px solid rgba(23,21,18,0.12); }
+
+.sticker-book-page-label {
+  margin: 0 0 0.9rem;
+  padding: 0.35rem 0.7rem;
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-weight: 900;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  display: inline-block;
+}
+
+.sticker-book-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.sticker-book-spine {
+  width: 34px;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      var(--ink) 0 14px,
+      var(--paper-deep) 14px 20px
+    );
+  position: relative;
+}
+.sticker-book-spine span {
+  position: absolute;
+  left: 50%;
+  width: 8px;
+  height: 14px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 3px;
+  transform: translateX(-50%);
+}
+.sticker-book-spine span:nth-child(1) { top: 8%; }
+.sticker-book-spine span:nth-child(2) { top: 32%; }
+.sticker-book-spine span:nth-child(3) { top: 56%; }
+.sticker-book-spine span:nth-child(4) { top: 80%; }
+
+/* Individual sticker slot inside the book */
+.sticker-slot {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.7rem 0.6rem 0.75rem;
+  border: 4px dashed var(--ink);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.45);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-style 180ms ease, background 180ms ease;
+  text-align: center;
+}
+
+.sticker-slot.is-unlocked {
+  border-style: solid;
+  background: var(--white);
+  box-shadow: 5px 5px 0 var(--ink);
+  transform: rotate(-1deg);
+}
+.sticker-slot.is-unlocked:nth-child(even) { transform: rotate(1.2deg); }
+
+.sticker-slot.is-unlocked:hover {
+  transform: rotate(0deg) translate(-1px, -1px);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.sticker-slot-art {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--ink);
+  border-radius: 14px;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.sticker-slot.is-unlocked .sticker-slot-art {
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.45);
+}
+
+.sticker-slot.is-locked .sticker-slot-art {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--paper-deep),
+    var(--paper-deep) 8px,
+    var(--paper) 8px,
+    var(--paper) 16px
+  );
+}
+
+.sticker-slot-question {
+  font-size: 3rem;
+  font-weight: 900;
+  color: rgba(23, 21, 18, 0.4);
+}
+
+.sticker-slot-body {
+  display: grid;
+  gap: 0.2rem;
+  align-items: start;
+}
+
+.sticker-slot-lane {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.sticker-slot-title {
+  font-size: 1rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.sticker-slot.is-locked .sticker-slot-title {
+  color: rgba(23, 21, 18, 0.55);
+}
+
+.sticker-slot-note {
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: rgba(23, 21, 18, 0.72);
+}
+
+/* Trophy wall (framed awards on wooden shelves) */
+.trophy-wall {
+  max-width: calc(1440px - 4rem);
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+.trophy-wall-head {
+  margin-bottom: 1.25rem;
+}
+.trophy-wall-head h2 {
+  margin: 0.3rem 0 0.5rem;
+  font-size: 2rem;
+  text-transform: uppercase;
+}
+.trophy-wall-sub {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  max-width: 62ch;
+  line-height: 1.4;
+  opacity: 0.78;
+}
+
+.trophy-shelves {
+  display: grid;
+  gap: 2.2rem;
+}
+
+.trophy-shelf {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.trophy-shelf-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.2rem;
+  padding: 0 1.5rem;
+  align-items: end;
+}
+
+.trophy-shelf-plank {
+  height: 22px;
+  border: 4px solid var(--ink);
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(23, 21, 18, 0.12) 0 2px,
+      transparent 2px 22px
+    ),
+    linear-gradient(180deg, #d9b98a 0%, #a97f4d 100%);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.trophy-frame {
+  display: grid;
+  gap: 0;
+  border: 6px solid var(--ink);
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f5e7c4, #d9b98a);
+  box-shadow: 7px 7px 0 var(--ink);
+  overflow: hidden;
+  transform: rotate(-1.5deg);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.trophy-frame:nth-child(2n) { transform: rotate(1.5deg); }
+.trophy-frame:nth-child(3n) { transform: rotate(-0.5deg); }
+.trophy-frame:hover {
+  transform: rotate(0deg) translate(-1px, -1px);
+  box-shadow: 9px 9px 0 var(--ink);
+}
+
+.trophy-frame-mat {
+  padding: 1rem;
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border-bottom: 4px solid var(--ink);
+}
+.trophy-frame-mat img {
+  width: 100%;
+  max-width: 130px;
+  height: auto;
+}
+
+.trophy-plaque {
+  padding: 0.55rem 0.7rem;
+  background: var(--ink);
+  color: var(--yellow);
+  text-align: center;
+  display: grid;
+  gap: 0.1rem;
+}
+.trophy-plaque strong {
+  font-size: 0.95rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+.trophy-plaque small {
+  font-size: 0.66rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.trophy-empty {
+  padding: 2rem;
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+  border: 4px dashed var(--ink);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.trophy-empty p {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  max-width: 60ch;
+  line-height: 1.4;
+}
+
+/* Compact reward-panel link on the board sidebar */
+.reward-panel-link {
+  display: grid;
+  gap: 0.6rem;
+}
+.reward-preview {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.reward-preview img {
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--paper);
+}
+.reward-preview-empty {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  opacity: 0.72;
+}
+.reward-preview-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.55rem 0.85rem;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-weight: 900;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+  align-self: start;
+}
+.reward-preview-cta:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+@media (max-width: 980px) {
+  .hall-hero { grid-template-columns: 1fr; }
+  .hall-hero img { justify-self: start; }
+  .hall-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sticker-book-spread { grid-template-columns: 1fr; }
+  .sticker-book-spine { width: 100%; height: 24px; }
+  .sticker-book-page-left { border-right: none; border-bottom: 3px solid rgba(23,21,18,0.12); }
+  .sticker-book-page-right { border-left: none; }
+  .trophy-shelf-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .sticker-book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trophy-shelf-row { grid-template-columns: 1fr; }
+}

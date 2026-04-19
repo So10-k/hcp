@@ -199,7 +199,7 @@ export function makeStarterState(): SideQuestState {
         id: "reward-first-clear",
         title: "First Clear",
         kind: "badge",
-        image: "/sticker-star.png",
+        image: "/sticker-star.svg",
         unlocked: false,
         note: "Clear a quest to unlock your first badge."
       },
@@ -207,7 +207,7 @@ export function makeStarterState(): SideQuestState {
         id: "reward-party-spark",
         title: "Party Spark",
         kind: "sticker",
-        image: "/sticker-bolt.png",
+        image: "/sticker-bolt.svg",
         unlocked: false,
         note: "Invite someone into a shared quest."
       },
@@ -215,7 +215,7 @@ export function makeStarterState(): SideQuestState {
         id: "reward-focus-flame",
         title: "Focus Flame",
         kind: "sticker",
-        image: "/sticker-leaf.png",
+        image: "/sticker-leaf.svg",
         unlocked: false,
         note: "Use focus mode and finish a sprint."
       },
@@ -223,7 +223,7 @@ export function makeStarterState(): SideQuestState {
         id: "reward-boss-clear",
         title: "Boss Clear",
         kind: "badge",
-        image: "/sticker-shield.png",
+        image: "/sticker-shield.svg",
         unlocked: false,
         note: "Clear a quest that has been sitting around too long."
       }

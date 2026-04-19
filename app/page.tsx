@@ -82,9 +82,9 @@ export default function Home() {
             </div>
           </div>
           <div className="hero-reward-shelf" aria-label="Reward shelf preview">
-            <Image src="/sticker-star.png" alt="" width={86} height={86} priority />
-            <Image src="/sticker-bolt.png" alt="" width={86} height={86} priority />
-            <Image src="/sticker-spark.png" alt="" width={86} height={86} priority />
+            <Image src="/sticker-star.svg" alt="" width={86} height={86} priority />
+            <Image src="/sticker-bolt.svg" alt="" width={86} height={86} priority />
+            <Image src="/sticker-spark.svg" alt="" width={86} height={86} priority />
             <strong>Confetti clear</strong>
           </div>
         </div>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <title>SideQuest — Brain Star sticker (School)</title>
+  <rect x="8" y="8" width="204" height="204" rx="30" fill="#ffd43d" stroke="#171512" stroke-width="7"/>
+  <rect x="24" y="22" width="64" height="16" rx="8" fill="#ffffff" opacity="0.45"/>
+  <polygon points="110,42 127,87 175,89 137,119 150,165 110,138 70,165 83,119 45,89 93,87"
+           fill="#171512" stroke="#171512" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="97" cy="108" r="5.5" fill="#ffd43d"/>
+  <circle cx="123" cy="108" r="5.5" fill="#ffd43d"/>
+  <circle cx="99" cy="106" r="1.8" fill="#171512"/>
+  <circle cx="125" cy="106" r="1.8" fill="#171512"/>
+  <path d="M 98 122 Q 110 130 122 122" stroke="#ffd43d" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+  <polygon points="182,58 187,46 192,58 204,62 192,66 187,78 182,66 170,62"
+           fill="#ff5a3d" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="38,170 41,160 44,170 54,174 44,178 41,188 38,178 28,174"
+           fill="#44d7a8" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="46,56 49,48 52,56 60,59 52,62 49,70 46,62 38,59"
+           fill="#ff78b7" stroke="#171512" stroke-width="2" stroke-linejoin="round"/>
+</svg>

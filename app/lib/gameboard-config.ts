@@ -13,7 +13,7 @@ export const GAMEBOARD_EVENT_TITLE = "Spring Sprint";
 export const GAMEBOARD_EVENT_SUBTITLE = "Limited time event";
 export const GAMEBOARD_REWARD_ID = `reward-lte-${GAMEBOARD_EVENT_ID}`;
 export const GAMEBOARD_REWARD_TITLE = "Spring Sprint Sticker";
-export const GAMEBOARD_REWARD_IMAGE = "/sticker-star.png";
+export const GAMEBOARD_REWARD_IMAGE = "/sticker-spring-sprint.svg";
 export const GAMEBOARD_REWARD_NOTE = "Looped the Spring Sprint board.";
 
 // 26 tiles on an 8x8 perimeter. Tile 0 is a spotlighted Start/Finish banner that

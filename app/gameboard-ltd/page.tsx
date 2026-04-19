@@ -30,6 +30,7 @@ export default async function GameboardLtdPage() {
         <div className="nav-actions">
           <Link href="/dashboard">Dashboard</Link>
           <Link href="/board">My board</Link>
+          <Link href="/achievements">Hall</Link>
           {user.role === "admin" ? <Link href="/admin">Admin</Link> : null}
           <form action="/api/logout" method="post">
             <button type="submit" className="ghost-button">Log out</button>

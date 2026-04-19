@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <title>SideQuest — Spring Sprint event sticker</title>
+  <defs>
+    <radialGradient id="spring-bg" cx="30%" cy="28%" r="90%">
+      <stop offset="0%" stop-color="#fff4c0"/>
+      <stop offset="60%" stop-color="#ffd43d"/>
+      <stop offset="100%" stop-color="#ffb83d"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="204" height="204" rx="30" fill="url(#spring-bg)" stroke="#171512" stroke-width="7"/>
+  <rect x="24" y="22" width="64" height="16" rx="8" fill="#ffffff" opacity="0.5"/>
+  <!-- Rays behind the medal -->
+  <g stroke="#171512" stroke-width="3" stroke-linecap="round">
+    <line x1="110" y1="22" x2="110" y2="42" />
+    <line x1="60" y1="48" x2="74" y2="62" />
+    <line x1="160" y1="48" x2="146" y2="62" />
+    <line x1="30" y1="100" x2="50" y2="100" />
+    <line x1="190" y1="100" x2="170" y2="100" />
+  </g>
+  <!-- Ribbon -->
+  <polygon points="80,138 140,138 148,196 122,182 110,196 98,182 72,196"
+           fill="#ff5a3d" stroke="#171512" stroke-width="5" stroke-linejoin="round"/>
+  <text x="110" y="172" text-anchor="middle" fill="#fffaf0"
+        font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif"
+        font-weight="900" font-size="16" letter-spacing="4">SPRING</text>
+  <!-- Medal coin -->
+  <circle cx="110" cy="96" r="52" fill="#fffaf0" stroke="#171512" stroke-width="6"/>
+  <circle cx="110" cy="96" r="38" fill="#ffd43d" stroke="#171512" stroke-width="4"/>
+  <!-- Die on coin (representing the dice event) -->
+  <rect x="88" y="74" width="44" height="44" rx="8" fill="#fffaf0" stroke="#171512" stroke-width="4"/>
+  <circle cx="99" cy="85" r="3.2" fill="#171512"/>
+  <circle cx="110" cy="96" r="3.2" fill="#171512"/>
+  <circle cx="121" cy="107" r="3.2" fill="#171512"/>
+  <circle cx="99" cy="107" r="3.2" fill="#171512"/>
+  <circle cx="121" cy="85" r="3.2" fill="#171512"/>
+  <!-- Sparkles -->
+  <polygon points="42,52 45,44 48,52 56,55 48,58 45,66 42,58 34,55"
+           fill="#ff5a3d" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="180,168 183,160 186,168 194,171 186,174 183,182 180,174 172,171"
+           fill="#44d7a8" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

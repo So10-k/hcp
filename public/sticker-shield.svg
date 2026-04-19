@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <title>SideQuest — Done Shield sticker (Life admin)</title>
+  <rect x="8" y="8" width="204" height="204" rx="30" fill="#ff5a3d" stroke="#171512" stroke-width="7"/>
+  <rect x="24" y="22" width="64" height="16" rx="8" fill="#ffffff" opacity="0.45"/>
+  <path d="M 58 50 L 110 36 L 162 50 L 158 120 C 155 150 136 170 110 182 C 84 170 65 150 62 120 Z"
+        fill="#ffd43d" stroke="#171512" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M 76 108 L 102 130 L 146 82" stroke="#171512" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 76 108 L 102 130 L 146 82" stroke="#44d7a8" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="110,50 115,60 125,62 118,70 120,80 110,75 100,80 102,70 95,62 105,60"
+           fill="#171512" stroke="#171512" stroke-width="2" stroke-linejoin="round"/>
+  <polygon points="34,52 37,44 40,52 48,55 40,58 37,66 34,58 26,55"
+           fill="#ffd43d" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="184,168 187,160 190,168 198,171 190,174 187,182 184,174 176,171"
+           fill="#ffd43d" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

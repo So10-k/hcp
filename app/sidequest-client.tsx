@@ -122,14 +122,14 @@ function rewardForQuest(quest: Quest): Reward {
     kind: quest.category === "school" || quest.category === "social" ? "badge" : "sticker",
     image:
       quest.category === "health"
-        ? "/sticker-leaf.png"
+        ? "/sticker-leaf.svg"
         : quest.category === "creative"
-          ? "/sticker-spark.png"
+          ? "/sticker-spark.svg"
           : quest.category === "social"
-            ? "/sticker-bolt.png"
+            ? "/sticker-bolt.svg"
             : quest.category === "life admin"
-              ? "/sticker-shield.png"
-              : "/sticker-star.png",
+              ? "/sticker-shield.svg"
+              : "/sticker-star.svg",
     unlocked: true,
     note: `Unlocked by finishing "${quest.title}".`
   };
@@ -702,6 +702,7 @@ export default function SideQuestClient() {
           <a href="/dashboard">Dashboard</a>
           <a href="#quests">Board</a>
           <a href="#party">Party</a>
+          <a href="/achievements">Hall</a>
           <a href="/admin">Admin</a>
           <SyncPill status={syncStatus} updatedAt={updatedAt} />
           <button type="button" className="ghost-button" onClick={refreshBoard}>
@@ -861,7 +862,7 @@ export default function SideQuestClient() {
               onPostActivity={postActivity}
             />
             <StreakPanel streak={state.streak} weeklyClears={weeklyClears} />
-            <RewardShelf rewards={state.rewards} />
+            <RewardShelfLink rewards={state.rewards} />
           </aside>
         </div>
       </section>
@@ -1143,7 +1144,7 @@ function SyncPill({ status, updatedAt }: { status: SyncStatus; updatedAt: string
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="empty-state">
-      <Image src="/sticker-spark.png" alt="" width={92} height={92} />
+      <Image src="/sticker-spark.svg" alt="" width={92} height={92} />
       <h3>No quests in this lane yet.</h3>
       <p>Drop one tiny quest here and give your party something easy to rally around.</p>
       <button type="button" className="primary-button small" onClick={onCreate}>
@@ -1320,24 +1321,34 @@ function StreakPanel({
   );
 }
 
-function RewardShelf({ rewards }: { rewards: Reward[] }) {
+function RewardShelfLink({ rewards }: { rewards: Reward[] }) {
+  const unlocked = rewards.filter((r) => r.unlocked).slice(0, 4);
   return (
-    <section className="info-panel reward-panel" aria-labelledby="reward-title">
+    <section className="info-panel reward-panel reward-panel-link" aria-labelledby="reward-title">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Reward shelf</p>
-          <h2 id="reward-title">Badges and stickers</h2>
+          <p className="eyebrow">Hall of achievements</p>
+          <h2 id="reward-title">Your stickers</h2>
         </div>
       </div>
-      <div className="reward-grid">
-        {rewards.map((reward) => (
-          <article className={`reward-item ${reward.unlocked ? "" : "is-locked"}`} key={reward.id}>
-            <Image src={reward.image} alt={`${reward.title} ${reward.kind}`} width={92} height={92} />
-            <strong>{reward.title}</strong>
-            <small>{reward.unlocked ? reward.note : "Locked until a matching quest is cleared."}</small>
-          </article>
-        ))}
+      <div className="reward-preview">
+        {unlocked.length > 0 ? (
+          unlocked.map((reward) => (
+            <Image
+              key={reward.id}
+              src={reward.image}
+              alt={reward.title}
+              width={64}
+              height={64}
+            />
+          ))
+        ) : (
+          <p className="reward-preview-empty">Clear a quest to unlock your first sticker.</p>
+        )}
       </div>
+      <a className="reward-preview-cta" href="/achievements">
+        Open hall of achievements →
+      </a>
     </section>
   );
 }
