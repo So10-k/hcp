@@ -724,7 +724,7 @@ export default function SideQuestClient() {
       <section className="dashboard-shell" id="quests" aria-labelledby="dashboard-title">
         <div className="dashboard-header">
           <div>
-            <p className="eyebrow">{isPersonalBoard ? "Solo board · Neon synced" : "Party board · Neon synced"}</p>
+            <p className="eyebrow">{isPersonalBoard ? "Solo board" : "Party board"}</p>
             <h2 id="dashboard-title">{activeBoard.title}</h2>
             {syncError ? <p className="sync-error">{syncError}</p> : null}
           </div>
