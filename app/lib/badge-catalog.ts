@@ -69,6 +69,15 @@ export const ADMIN_BADGES: AdminBadge[] = [
     color: "#ffd43d",
     note: "Closed out the Spring Sprint event before anyone else.",
     vibe: "Looped it. First. Cold."
+  },
+  {
+    id: "badge-high-roller",
+    title: "High Roller",
+    kind: "badge",
+    image: "/sticker-high-roller.svg",
+    color: "#ff5a3d",
+    note: "Climbed the Coin Tower. Pure luck, pure stats.",
+    vibe: "Tails be damned. Made it to rung 10."
   }
 ];
 

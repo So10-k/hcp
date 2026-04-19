@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="220" height="220">
+  <title>SideQuest — High Roller event badge</title>
+  <defs>
+    <radialGradient id="hr-bg" cx="32%" cy="28%" r="92%">
+      <stop offset="0%" stop-color="#ffe17a"/>
+      <stop offset="55%" stop-color="#ff8a3d"/>
+      <stop offset="100%" stop-color="#ff5a3d"/>
+    </radialGradient>
+  </defs>
+  <rect x="8" y="8" width="204" height="204" rx="30" fill="url(#hr-bg)" stroke="#171512" stroke-width="7"/>
+  <rect x="24" y="22" width="64" height="16" rx="8" fill="#ffffff" opacity="0.5"/>
+  <!-- Card-suits diamond background -->
+  <polygon points="110,30 178,110 110,190 42,110"
+           fill="#171512" stroke="#171512" stroke-width="4"/>
+  <polygon points="110,42 168,110 110,178 52,110"
+           fill="#fffaf0" stroke="#171512" stroke-width="3"/>
+  <!-- Mint coin medallion -->
+  <circle cx="110" cy="110" r="48" fill="#fffaf0" stroke="#171512" stroke-width="6"/>
+  <circle cx="110" cy="110" r="40" fill="#44d7a8" stroke="#171512" stroke-width="4"/>
+  <!-- Two crossed coins on the medallion -->
+  <ellipse cx="96" cy="106" rx="20" ry="18" fill="#ffd43d" stroke="#171512" stroke-width="4" transform="rotate(-18 96 106)"/>
+  <text x="96" y="113" text-anchor="middle" fill="#171512"
+        font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif"
+        font-weight="900" font-size="18" transform="rotate(-18 96 106)">$</text>
+  <ellipse cx="124" cy="116" rx="20" ry="18" fill="#fffaf0" stroke="#171512" stroke-width="4" transform="rotate(20 124 116)"/>
+  <text x="124" y="123" text-anchor="middle" fill="#171512"
+        font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif"
+        font-weight="900" font-size="18" transform="rotate(20 124 116)">$</text>
+  <!-- Top arc text: HIGH ROLLER -->
+  <path id="hr-arc-top" d="M 30,110 A 80,80 0 0 1 190,110" fill="none"/>
+  <text fill="#171512" font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif"
+        font-weight="900" font-size="16" letter-spacing="3">
+    <textPath href="#hr-arc-top" startOffset="50%" text-anchor="middle">HIGH ROLLER</textPath>
+  </text>
+  <!-- Bottom arc text: RUNG 10 -->
+  <path id="hr-arc-bot" d="M 32,116 A 78,78 0 0 0 188,116" fill="none"/>
+  <text fill="#171512" font-family="Trebuchet MS, Arial Rounded MT Bold, Arial, sans-serif"
+        font-weight="900" font-size="14" letter-spacing="6">
+    <textPath href="#hr-arc-bot" startOffset="50%" text-anchor="middle">RUNG · 10</textPath>
+  </text>
+  <!-- Sparkles in the corners -->
+  <polygon points="40,52 43,44 46,52 54,55 46,58 43,66 40,58 32,55"
+           fill="#ffd43d" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+  <polygon points="180,168 183,160 186,168 194,171 186,174 183,182 180,174 172,171"
+           fill="#5fc7f2" stroke="#171512" stroke-width="2.5" stroke-linejoin="round"/>
+</svg>

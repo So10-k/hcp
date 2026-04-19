@@ -19,7 +19,19 @@ type AdminUserSummary = {
   rewardsCount: number;
   gameboardPosition: number;
   gameboardCompleted: boolean;
+  highRollerRung: number;
+  highRollerPeak: number;
+  highRollerBusts: number;
+  highRollerCompleted: boolean;
 };
+
+type EventId = "spring-sprint" | "high-roller";
+type EventActionKind = "fast-forward" | "reset" | "award-tokens";
+
+const EVENT_OPTIONS: Array<{ id: EventId; label: string }> = [
+  { id: "spring-sprint", label: "Spring Sprint" },
+  { id: "high-roller", label: "High Roller" }
+];
 
 type Props = {
   initialUsers: AdminUserSummary[];
@@ -32,6 +44,7 @@ type ModalState =
   | { kind: "dice"; user: AdminUserSummary }
   | { kind: "sticker"; user: AdminUserSummary }
   | { kind: "badge"; user: AdminUserSummary }
+  | { kind: "event"; user: AdminUserSummary }
   | null;
 
 async function postAction(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string }> {
@@ -139,6 +152,7 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
               <th>Quests</th>
               <th>Rewards</th>
               <th>Spring Sprint</th>
+              <th>High Roller</th>
               <th>Status</th>
               <th aria-label="Actions"></th>
             </tr>
@@ -146,7 +160,7 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="admin-empty">
+                <td colSpan={8} className="admin-empty">
                   No matching users.
                 </td>
               </tr>
@@ -181,6 +195,18 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                     </span>
                   </td>
                   <td>
+                    <span className="admin-user-stat">
+                      Rung {user.highRollerRung}
+                    </span>
+                    <span className="admin-user-sub">
+                      {user.highRollerCompleted
+                        ? "Cleared"
+                        : user.gameboardCompleted
+                          ? `Peak ${user.highRollerPeak} · ${user.highRollerBusts} bust${user.highRollerBusts === 1 ? "" : "s"}`
+                          : "Locked"}
+                    </span>
+                  </td>
+                  <td>
                     {user.suspendedAt ? (
                       <span className="admin-status admin-status-paused" title={user.suspendedReason ?? ""}>
                         Paused
@@ -198,6 +224,9 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                     </button>
                     <button type="button" onClick={() => setModal({ kind: "dice", user })}>
                       Dice
+                    </button>
+                    <button type="button" onClick={() => setModal({ kind: "event", user })}>
+                      Event
                     </button>
                     <Link
                       className="admin-user-action-link"
@@ -264,6 +293,9 @@ function AdminModal({
   const [stickerImage, setStickerImage] = useState("/sticker-star.svg");
   const [stickerKind, setStickerKind] = useState<"badge" | "sticker">("sticker");
   const [badgeId, setBadgeId] = useState(badges[0]?.id ?? "");
+  const [eventId, setEventId] = useState<EventId>("spring-sprint");
+  const [eventAction, setEventAction] = useState<EventActionKind>("fast-forward");
+  const [eventCount, setEventCount] = useState(5);
 
   const handleSubmit = async () => {
     switch (modal.kind) {
@@ -291,6 +323,31 @@ function AdminModal({
         if (!badgeId) return;
         await onSubmit({ action: "award-badge", userId: modal.user.id, badgeId }, "Badge dropped");
         return;
+      case "event": {
+        const eventLabel = EVENT_OPTIONS.find((e) => e.id === eventId)?.label ?? eventId;
+        if (eventAction === "fast-forward") {
+          await onSubmit(
+            { action: "fast-forward-event", userId: modal.user.id, eventId },
+            `${eventLabel} fast-forwarded`
+          );
+        } else if (eventAction === "reset") {
+          await onSubmit(
+            { action: "reset-event", userId: modal.user.id, eventId },
+            `${eventLabel} reset`
+          );
+        } else {
+          await onSubmit(
+            {
+              action: "award-event-tokens",
+              userId: modal.user.id,
+              eventId,
+              count: eventCount
+            },
+            `+${eventCount} ${eventId === "high-roller" ? "flips" : "dice"} · ${eventLabel}`
+          );
+        }
+        return;
+      }
     }
   };
 
@@ -406,6 +463,69 @@ function AdminModal({
               ))}
             </div>
           ) : null}
+
+          {modal.kind === "event" ? (
+            <>
+              <fieldset className="admin-event-fieldset">
+                <legend>Event</legend>
+                {EVENT_OPTIONS.map((opt) => (
+                  <label key={opt.id} className={`admin-event-option${eventId === opt.id ? " is-active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="event-id"
+                      value={opt.id}
+                      checked={eventId === opt.id}
+                      onChange={() => setEventId(opt.id)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </fieldset>
+              <fieldset className="admin-event-fieldset">
+                <legend>Action</legend>
+                {([
+                  { id: "fast-forward" as const, label: "Fast-forward to complete" },
+                  { id: "award-tokens" as const, label: "Award flip / dice tokens" },
+                  { id: "reset" as const, label: "Reset run (admin testing)" }
+                ]).map((opt) => (
+                  <label key={opt.id} className={`admin-event-option${eventAction === opt.id ? " is-active" : ""}`}>
+                    <input
+                      type="radio"
+                      name="event-action"
+                      value={opt.id}
+                      checked={eventAction === opt.id}
+                      onChange={() => setEventAction(opt.id)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </fieldset>
+              {eventAction === "award-tokens" ? (
+                <label>
+                  Tokens to grant
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={eventCount}
+                    onChange={(event) => setEventCount(Number.parseInt(event.target.value, 10) || 1)}
+                  />
+                </label>
+              ) : null}
+              {eventAction === "fast-forward" ? (
+                <p className="admin-modal-warn">
+                  Marks the run complete. {eventId === "spring-sprint"
+                    ? "Drops the Spring Sprint sticker into the user's reward shelf."
+                    : "Does NOT award the High Roller badge — admins must earn it through the actual flip flow when testing."}
+                </p>
+              ) : null}
+              {eventAction === "reset" ? (
+                <p className="admin-modal-warn">
+                  Wipes position, rolls, busts, and completion. The user gets no notification.
+                </p>
+              ) : null}
+            </>
+          ) : null}
         </div>
         <footer className="admin-modal-foot">
           <button type="button" className="admin-modal-cancel" onClick={onClose}>
@@ -431,6 +551,7 @@ function modalTitle(kind: NonNullable<ModalState>["kind"]) {
     case "dice": return "Drop bonus dice";
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
+    case "event": return "Event controls";
   }
 }
 
@@ -440,5 +561,6 @@ function modalAction(kind: NonNullable<ModalState>["kind"]) {
     case "dice": return "Drop dice";
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
+    case "event": return "Apply event action";
   }
 }

@@ -4,6 +4,13 @@ import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { getGameboardRun, loadSideQuestBoard } from "../lib/sidequest-db";
 import { GAMEBOARD_EVENT_TITLE, GAMEBOARD_REWARD_IMAGE, GAMEBOARD_REWARD_TITLE } from "../lib/gameboard-config";
+import {
+  HIGHROLLER_EVENT_ID,
+  HIGHROLLER_EVENT_TITLE,
+  HIGHROLLER_REWARD_ID,
+  HIGHROLLER_REWARD_IMAGE,
+  HIGHROLLER_REWARD_TITLE
+} from "../lib/highroller-config";
 import type { Reward } from "../seed-data";
 
 export const dynamic = "force-dynamic";
@@ -72,17 +79,32 @@ const MASTER_SLOTS: MasterSlot[] = [
     image: GAMEBOARD_REWARD_IMAGE,
     category: "event",
     color: "#ffd43d"
+  },
+  {
+    id: "slot-high-roller",
+    title: HIGHROLLER_REWARD_TITLE,
+    lane: "Event · Coin Tower",
+    note: `Climb to rung 10 of the ${HIGHROLLER_EVENT_TITLE} tower. Pure luck.`,
+    image: HIGHROLLER_REWARD_IMAGE,
+    category: "event",
+    color: "#ff5a3d"
   }
 ];
 
 function isUnlocked(slot: MasterSlot, rewards: Reward[]): boolean {
-  return rewards.some(
-    (r) =>
-      r.unlocked &&
-      (r.image === slot.image ||
-        // Event sticker is keyed by id prefix
-        (slot.category === "event" && r.id.startsWith("reward-lte-")))
-  );
+  // Match by image first (works for the lane stickers and the unique
+  // HR/SS images). Then fall back to slot-specific id checks for events.
+  return rewards.some((r) => {
+    if (!r.unlocked) return false;
+    if (r.image === slot.image) return true;
+    if (slot.id === "slot-high-roller") {
+      return r.id === HIGHROLLER_REWARD_ID;
+    }
+    if (slot.id === "slot-spring") {
+      return r.id.startsWith("reward-lte-spring-sprint");
+    }
+    return false;
+  });
 }
 
 export default async function AchievementsPage() {

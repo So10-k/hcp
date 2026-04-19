@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "../../../lib/auth";
 import { getBadgeById } from "../../../lib/badge-catalog";
+import { GAMEBOARD_EVENT_ID } from "../../../lib/gameboard-config";
+import { HIGHROLLER_EVENT_ID } from "../../../lib/highroller-config";
 import {
   adminAwardBadge,
   adminAwardDice,
+  adminAwardEventTokens,
   adminAwardSticker,
+  adminCompleteGameboardEvent,
+  adminResetGameboardEvent,
   adminSuspendUser,
   adminUnsuspendUser
 } from "../../../lib/sidequest-db";
 
 export const runtime = "nodejs";
+
+const KNOWN_EVENT_IDS = new Set<string>([GAMEBOARD_EVENT_ID, HIGHROLLER_EVENT_ID]);
 
 type ActionBody =
   | { action: "suspend"; userId: string; reason?: string }
@@ -23,7 +30,10 @@ type ActionBody =
       image: string;
       note: string;
       kind?: "badge" | "sticker";
-    };
+    }
+  | { action: "fast-forward-event"; userId: string; eventId: string }
+  | { action: "reset-event"; userId: string; eventId: string }
+  | { action: "award-event-tokens"; userId: string; eventId: string; count: number };
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -61,6 +71,27 @@ export async function POST(request: Request) {
           kind: body.kind
         });
         return NextResponse.json({ ok: true });
+      case "fast-forward-event": {
+        if (!KNOWN_EVENT_IDS.has(body.eventId)) {
+          return NextResponse.json({ error: "Unknown event id." }, { status: 400 });
+        }
+        await adminCompleteGameboardEvent(admin.id, body.userId, body.eventId);
+        return NextResponse.json({ ok: true });
+      }
+      case "reset-event": {
+        if (!KNOWN_EVENT_IDS.has(body.eventId)) {
+          return NextResponse.json({ error: "Unknown event id." }, { status: 400 });
+        }
+        await adminResetGameboardEvent(admin.id, body.userId, body.eventId);
+        return NextResponse.json({ ok: true });
+      }
+      case "award-event-tokens": {
+        if (!KNOWN_EVENT_IDS.has(body.eventId)) {
+          return NextResponse.json({ error: "Unknown event id." }, { status: 400 });
+        }
+        await adminAwardEventTokens(admin.id, body.userId, body.eventId, body.count);
+        return NextResponse.json({ ok: true });
+      }
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });
     }

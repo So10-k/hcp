@@ -13,7 +13,7 @@ export default async function SpectatePage({ params }: { params: Promise<{ userI
   if (!snapshot) {
     notFound();
   }
-  const { user, state, gameboardRun, notifications, updatedAt } = snapshot;
+  const { user, state, gameboardRun, highRollerRun, notifications, updatedAt } = snapshot;
   const boards = state.boards ?? [];
   const rewards = state.rewards ?? [];
   const streak = state.streak ?? [];
@@ -130,6 +130,23 @@ export default async function SpectatePage({ params }: { params: Promise<{ userI
             </div>
           ) : (
             <p className="admin-empty">No Spring Sprint run yet.</p>
+          )}
+        </article>
+
+        <article className="spectate-card">
+          <h2>High Roller</h2>
+          {highRollerRun ? (
+            <div className="spectate-run">
+              <div><strong>Rung</strong><span>{highRollerRun.position}</span></div>
+              <div><strong>Peak</strong><span>{highRollerRun.peakPosition}</span></div>
+              <div><strong>Flips ready</strong><span>{highRollerRun.rollsAvailable}</span></div>
+              <div><strong>Flips earned</strong><span>{highRollerRun.rollsEarned}</span></div>
+              <div><strong>Flips used</strong><span>{highRollerRun.rollsUsed}</span></div>
+              <div><strong>Busts</strong><span>{highRollerRun.laps}</span></div>
+              <div><strong>Completed</strong><span>{highRollerRun.completedAt ? new Date(highRollerRun.completedAt).toLocaleString() : "—"}</span></div>
+            </div>
+          ) : (
+            <p className="admin-empty">No High Roller run yet.</p>
           )}
         </article>
 

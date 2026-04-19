@@ -8,8 +8,12 @@ type Notification = {
     | "award-sticker"
     | "award-badge"
     | "award-dice"
+    | "award-flip-tokens"
     | "account-suspended"
     | "account-unsuspended"
+    | "high-roller-completed"
+    | "high-roller-bust"
+    | "event-fast-forwarded"
     | "custom";
   title: string;
   body: string;
@@ -24,8 +28,12 @@ const KIND_COLORS: Record<Notification["kind"], string> = {
   "award-sticker": "var(--pink)",
   "award-badge": "var(--yellow)",
   "award-dice": "var(--red)",
+  "award-flip-tokens": "var(--mint)",
   "account-suspended": "var(--pink)",
   "account-unsuspended": "var(--mint)",
+  "high-roller-completed": "var(--yellow)",
+  "high-roller-bust": "var(--red)",
+  "event-fast-forwarded": "var(--sky)",
   custom: "var(--sky)"
 };
 
@@ -205,28 +213,44 @@ export function NotificationBell() {
               <span className="notif-toast-glyph" aria-hidden="true">
                 {toast.kind === "award-dice"
                   ? "🎲"
-                  : toast.kind === "award-badge"
-                    ? "🏅"
-                    : toast.kind === "account-suspended"
-                      ? "⏸"
-                      : toast.kind === "account-unsuspended"
-                        ? "🔓"
-                        : "✨"}
+                  : toast.kind === "award-flip-tokens"
+                    ? "🪙"
+                    : toast.kind === "award-badge"
+                      ? "🏅"
+                      : toast.kind === "high-roller-completed"
+                        ? "🪙"
+                        : toast.kind === "high-roller-bust"
+                          ? "💥"
+                          : toast.kind === "event-fast-forwarded"
+                            ? "⏭"
+                            : toast.kind === "account-suspended"
+                              ? "⏸"
+                              : toast.kind === "account-unsuspended"
+                                ? "🔓"
+                                : "✨"}
               </span>
             )}
             <div className="notif-toast-copy">
               <span className="notif-toast-kicker">
                 {toast.kind === "award-dice"
                   ? "Bonus rolls"
-                  : toast.kind === "award-badge"
-                    ? "Badge dropped"
-                    : toast.kind === "award-sticker"
-                      ? "Sticker dropped"
-                      : toast.kind === "account-suspended"
-                        ? "Account paused"
-                        : toast.kind === "account-unsuspended"
-                          ? "You're back"
-                          : "For you"}
+                  : toast.kind === "award-flip-tokens"
+                    ? "Flip tokens"
+                    : toast.kind === "award-badge"
+                      ? "Badge dropped"
+                      : toast.kind === "award-sticker"
+                        ? "Sticker dropped"
+                        : toast.kind === "high-roller-completed"
+                          ? "Tower cleared"
+                          : toast.kind === "high-roller-bust"
+                            ? "Bust"
+                            : toast.kind === "event-fast-forwarded"
+                              ? "Event jumped"
+                              : toast.kind === "account-suspended"
+                                ? "Account paused"
+                                : toast.kind === "account-unsuspended"
+                                  ? "You're back"
+                                  : "For you"}
               </span>
               <strong>{toast.title}</strong>
               <p>{toast.body}</p>

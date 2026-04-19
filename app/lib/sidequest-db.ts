@@ -21,6 +21,16 @@ import {
   GAMEBOARD_REWARD_TITLE,
   GAMEBOARD_TILES
 } from "./gameboard-config";
+import {
+  HIGHROLLER_EVENT_ID,
+  HIGHROLLER_REWARD_ID,
+  HIGHROLLER_REWARD_IMAGE,
+  HIGHROLLER_REWARD_NOTE,
+  HIGHROLLER_REWARD_TITLE,
+  HIGHROLLER_RUNG_COUNT,
+  HIGHROLLER_SOFT_BUST_DROP,
+  HIGHROLLER_SOFT_BUST_THRESHOLD
+} from "./highroller-config";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -194,6 +204,10 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
       )
     `;
     await sql`
+      ALTER TABLE sidequest_gameboard_runs
+        ADD COLUMN IF NOT EXISTS peak_position integer NOT NULL DEFAULT 0
+    `;
+    await sql`
       CREATE TABLE IF NOT EXISTS sidequest_gameboard_events (
         id bigserial PRIMARY KEY,
         user_id text NOT NULL,
@@ -279,6 +293,7 @@ export type GameboardRun = {
   rollsUsed: number;
   rollsAvailable: number;
   laps: number;
+  peakPosition: number;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -301,6 +316,7 @@ type GameboardRunRow = {
   rolls_earned: number;
   rolls_used: number;
   laps: number;
+  peak_position: number;
   completed_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
@@ -315,6 +331,7 @@ function toGameboardRun(row: GameboardRunRow): GameboardRun {
     rollsUsed: row.rolls_used,
     rollsAvailable: Math.max(0, row.rolls_earned - row.rolls_used),
     laps: row.laps,
+    peakPosition: row.peak_position ?? row.position ?? 0,
     completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()
@@ -331,7 +348,7 @@ async function ensureGameboardRun(userId: string, eventId: string): Promise<Game
   `;
   const rows = (await sql`
     SELECT user_id, event_id, position, rolls_earned, rolls_used, laps,
-           completed_at, created_at, updated_at
+           peak_position, completed_at, created_at, updated_at
     FROM sidequest_gameboard_runs
     WHERE user_id = ${userId} AND event_id = ${eventId}
     LIMIT 1
@@ -354,7 +371,7 @@ export async function grantGameboardRoll(userId: string, eventId: string = GAMEB
     SET rolls_earned = rolls_earned + 1, updated_at = now()
     WHERE user_id = ${userId} AND event_id = ${eventId} AND completed_at IS NULL
     RETURNING user_id, event_id, position, rolls_earned, rolls_used, laps,
-              completed_at, created_at, updated_at
+              peak_position, completed_at, created_at, updated_at
   `) as GameboardRunRow[];
   await sql`
     INSERT INTO sidequest_gameboard_events (user_id, event_id, event_type)
@@ -464,6 +481,143 @@ export async function executeGameboardRoll(userId: string, eventId: string = GAM
     reachedFinish,
     newlyCompleted,
     rewardId: newlyCompleted ? GAMEBOARD_REWARD_ID : null
+  };
+}
+
+// ===========================================================================
+// High Roller — pure-luck Coin Tower mechanic. Reuses sidequest_gameboard_runs
+// with event_id = "high-roller". See app/lib/highroller-config.ts for the
+// column→meaning mapping.
+// ===========================================================================
+
+export type HighRollerFlipResult = {
+  run: GameboardRun;
+  outcome: "heads" | "tails";
+  fromRung: number;
+  toRung: number;
+  busted: boolean;
+  softBust: boolean;
+  reachedTop: boolean;
+  newlyCompleted: boolean;
+  rewardId: string | null;
+};
+
+async function unlockHighRollerReward(userId: string) {
+  const board = await loadSideQuestBoard(userId);
+  if (board.state.rewards.some((item) => item.id === HIGHROLLER_REWARD_ID)) {
+    return;
+  }
+  const reward: Reward = {
+    id: HIGHROLLER_REWARD_ID,
+    title: HIGHROLLER_REWARD_TITLE,
+    kind: "badge",
+    image: HIGHROLLER_REWARD_IMAGE,
+    unlocked: true,
+    note: HIGHROLLER_REWARD_NOTE
+  };
+  const nextState: SideQuestState = {
+    ...board.state,
+    rewards: [reward, ...board.state.rewards]
+  };
+  await saveSideQuestBoard(userId, nextState, "high-roller-reward-unlocked");
+}
+
+export async function executeHighRollerFlip(userId: string): Promise<HighRollerFlipResult> {
+  const sql = getSql();
+  const current = await ensureGameboardRun(userId, HIGHROLLER_EVENT_ID);
+
+  if (current.completedAt) {
+    throw new Error("You have already topped the tower.");
+  }
+  if (current.rollsAvailable <= 0) {
+    throw new Error("No flip tokens — complete a quest to earn one.");
+  }
+
+  const heads = Math.random() < 0.5;
+  const fromRung = current.position;
+  let toRung = fromRung;
+  let busts = current.laps;
+  let busted = false;
+  let softBust = false;
+
+  if (heads) {
+    toRung = Math.min(HIGHROLLER_RUNG_COUNT, fromRung + 1);
+  } else {
+    busted = true;
+    if (fromRung >= HIGHROLLER_SOFT_BUST_THRESHOLD) {
+      softBust = true;
+      toRung = Math.max(0, fromRung - HIGHROLLER_SOFT_BUST_DROP);
+    } else {
+      toRung = 0;
+    }
+    busts += 1;
+  }
+
+  const reachedTop = toRung >= HIGHROLLER_RUNG_COUNT;
+  const peak = Math.max(current.peakPosition, toRung);
+
+  await sql`
+    UPDATE sidequest_gameboard_runs
+    SET position = ${toRung},
+        rolls_used = rolls_used + 1,
+        laps = ${busts},
+        peak_position = ${peak},
+        updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${HIGHROLLER_EVENT_ID}
+  `;
+
+  let newlyCompleted = false;
+  if (reachedTop) {
+    const completionRows = (await sql`
+      UPDATE sidequest_gameboard_runs
+      SET completed_at = now()
+      WHERE user_id = ${userId} AND event_id = ${HIGHROLLER_EVENT_ID} AND completed_at IS NULL
+      RETURNING user_id
+    `) as Array<{ user_id: string }>;
+    newlyCompleted = completionRows.length > 0;
+  }
+
+  await sql`
+    INSERT INTO sidequest_gameboard_events (user_id, event_id, event_type, payload)
+    VALUES (
+      ${userId},
+      ${HIGHROLLER_EVENT_ID},
+      ${reachedTop ? "flip-top" : busted ? "flip-bust" : "flip-climb"},
+      ${JSON.stringify({ outcome: heads ? "heads" : "tails", fromRung, toRung, softBust })}::jsonb
+    )
+  `;
+
+  if (newlyCompleted) {
+    await unlockHighRollerReward(userId);
+    await createNotification(userId, {
+      kind: "high-roller-completed",
+      title: "Tower cleared!",
+      body: "You climbed the Coin Tower clean. High Roller badge pinned to your shelf.",
+      payload: { image: HIGHROLLER_REWARD_IMAGE, title: HIGHROLLER_REWARD_TITLE }
+    });
+  } else if (busted && fromRung >= HIGHROLLER_SOFT_BUST_THRESHOLD) {
+    // Only ping on meaningful busts (from the upper half) — silent on
+    // routine resets from the lower half so the bell doesn't get spammy.
+    await createNotification(userId, {
+      kind: "high-roller-bust",
+      title: "Bust.",
+      body: `Tails. Dropped to rung ${toRung}.`,
+      payload: { fromRung, toRung }
+    });
+  }
+
+  const updated = await ensureGameboardRun(userId, HIGHROLLER_EVENT_ID);
+
+  return {
+    run: updated,
+    outcome: heads ? "heads" : "tails",
+    fromRung,
+    toRung,
+    busted,
+    softBust,
+    reachedTop,
+    newlyCompleted,
+    rewardId: newlyCompleted ? HIGHROLLER_REWARD_ID : null
   };
 }
 
@@ -1322,8 +1476,12 @@ export type NotificationKind =
   | "award-sticker"
   | "award-badge"
   | "award-dice"
+  | "award-flip-tokens"
   | "account-suspended"
   | "account-unsuspended"
+  | "high-roller-completed"
+  | "high-roller-bust"
+  | "event-fast-forwarded"
   | "custom";
 
 export type NotificationRecord = {
@@ -1469,6 +1627,10 @@ export type AdminUserSummary = {
   rewardsCount: number;
   gameboardPosition: number;
   gameboardCompleted: boolean;
+  highRollerRung: number;
+  highRollerPeak: number;
+  highRollerBusts: number;
+  highRollerCompleted: boolean;
 };
 
 export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
@@ -1489,10 +1651,15 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
       u.suspended_reason,
       COALESCE(jsonb_array_length(b.state -> 'rewards'), 0) AS rewards_count,
       COALESCE(gr.position, 0) AS gameboard_position,
-      (gr.completed_at IS NOT NULL) AS gameboard_completed
+      (gr.completed_at IS NOT NULL) AS gameboard_completed,
+      COALESCE(hr.position, 0) AS high_roller_rung,
+      COALESCE(hr.peak_position, 0) AS high_roller_peak,
+      COALESCE(hr.laps, 0) AS high_roller_busts,
+      (hr.completed_at IS NOT NULL) AS high_roller_completed
     FROM sidequest_users u
     LEFT JOIN sidequest_boards b ON b.id = CONCAT('user:', u.id)
-    LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = 'spring-sprint'
+    LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = ${GAMEBOARD_EVENT_ID}
+    LEFT JOIN sidequest_gameboard_runs hr ON hr.user_id = u.id AND hr.event_id = ${HIGHROLLER_EVENT_ID}
     ORDER BY u.last_active_at DESC
     LIMIT 200
   `) as Array<{
@@ -1510,6 +1677,10 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     rewards_count: number;
     gameboard_position: number;
     gameboard_completed: boolean;
+    high_roller_rung: number;
+    high_roller_peak: number;
+    high_roller_busts: number;
+    high_roller_completed: boolean;
   }>;
   return rows.map((row) => ({
     id: row.id,
@@ -1525,7 +1696,11 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     suspendedReason: row.suspended_reason,
     rewardsCount: row.rewards_count,
     gameboardPosition: row.gameboard_position,
-    gameboardCompleted: row.gameboard_completed
+    gameboardCompleted: row.gameboard_completed,
+    highRollerRung: row.high_roller_rung,
+    highRollerPeak: row.high_roller_peak,
+    highRollerBusts: row.high_roller_busts,
+    highRollerCompleted: row.high_roller_completed
   }));
 }
 
@@ -1635,23 +1810,108 @@ export async function adminAwardBadge(
   });
 }
 
+export type GameboardEventId = typeof GAMEBOARD_EVENT_ID | typeof HIGHROLLER_EVENT_ID;
+
+function eventLabel(eventId: string): string {
+  if (eventId === HIGHROLLER_EVENT_ID) return "High Roller";
+  if (eventId === GAMEBOARD_EVENT_ID) return "Spring Sprint";
+  return eventId;
+}
+
+function tokenWord(eventId: string, plural: boolean): string {
+  if (eventId === HIGHROLLER_EVENT_ID) return plural ? "flip tokens" : "flip token";
+  return plural ? "die rolls" : "die roll";
+}
+
+export async function adminAwardEventTokens(
+  adminId: string,
+  userId: string,
+  eventId: string,
+  count: number
+): Promise<void> {
+  const amount = Math.max(1, Math.min(50, Math.round(count)));
+  for (let i = 0; i < amount; i += 1) {
+    await grantGameboardRoll(userId, eventId);
+  }
+  await writeAudit(adminId, userId, "award-event-tokens", { eventId, count: amount });
+  const isFlip = eventId === HIGHROLLER_EVENT_ID;
+  await createNotification(userId, {
+    kind: isFlip ? "award-flip-tokens" : "award-dice",
+    title: `+${amount} ${tokenWord(eventId, amount !== 1)}`,
+    body: `An admin dropped ${amount} bonus ${tokenWord(eventId, amount !== 1)} on your ${eventLabel(eventId)} run.`,
+    payload: { count: amount, eventId },
+    awardedBy: adminId
+  });
+}
+
+// Back-compat shim — older callers (and the legacy admin "Dice" button)
+// still hit this. New code should use adminAwardEventTokens directly.
 export async function adminAwardDice(
   adminId: string,
   userId: string,
   count: number
 ): Promise<void> {
-  const amount = Math.max(1, Math.min(50, Math.round(count)));
-  for (let i = 0; i < amount; i += 1) {
-    await grantGameboardRoll(userId);
+  await adminAwardEventTokens(adminId, userId, GAMEBOARD_EVENT_ID, count);
+}
+
+export async function adminCompleteGameboardEvent(
+  adminId: string,
+  userId: string,
+  eventId: string
+): Promise<void> {
+  const sql = getSql();
+  await ensureGameboardRun(userId, eventId);
+  // Move the run to its terminal state. For Spring Sprint we leave position
+  // at 0 (the start/finish tile) since that's where a real lap-completer
+  // lands. For High Roller we lock the rung at the top of the tower.
+  const terminal = eventId === HIGHROLLER_EVENT_ID ? HIGHROLLER_RUNG_COUNT : 0;
+  await sql`
+    UPDATE sidequest_gameboard_runs
+    SET position = ${terminal},
+        peak_position = GREATEST(peak_position, ${terminal}),
+        completed_at = COALESCE(completed_at, now()),
+        updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${eventId}
+  `;
+  await writeAudit(adminId, userId, "fast-forward-event", { eventId });
+
+  // Spring Sprint completion drops its sticker so the user keeps the loot.
+  // High Roller completion does NOT drop the badge — admins must still
+  // earn the badge through the actual flip flow when testing.
+  if (eventId === GAMEBOARD_EVENT_ID) {
+    await unlockGameboardReward(userId);
   }
-  await writeAudit(adminId, userId, "award-dice", { count: amount });
+
   await createNotification(userId, {
-    kind: "award-dice",
-    title: `+${amount} die roll${amount === 1 ? "" : "s"}`,
-    body: `An admin dropped ${amount} bonus roll${amount === 1 ? "" : "s"} on your Spring Sprint board.`,
-    payload: { count: amount },
+    kind: "event-fast-forwarded",
+    title: `${eventLabel(eventId)} marked complete`,
+    body: `An admin closed out your ${eventLabel(eventId)} run for testing.`,
+    payload: { eventId },
     awardedBy: adminId
   });
+}
+
+export async function adminResetGameboardEvent(
+  adminId: string,
+  userId: string,
+  eventId: string
+): Promise<void> {
+  const sql = getSql();
+  await ensureGameboardRun(userId, eventId);
+  await sql`
+    UPDATE sidequest_gameboard_runs
+    SET position = 0,
+        rolls_earned = 0,
+        rolls_used = 0,
+        laps = 0,
+        peak_position = 0,
+        completed_at = NULL,
+        updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${eventId}
+  `;
+  await writeAudit(adminId, userId, "reset-event", { eventId });
+  // No user-facing notification — this is an admin testing tool, not a
+  // user achievement event.
 }
 
 export async function getSpectatorSnapshot(targetUserId: string) {
@@ -1666,7 +1926,10 @@ export async function getSpectatorSnapshot(targetUserId: string) {
   `) as UserRow[];
   if (userRows.length === 0) throw new Error("User not found.");
   const board = await loadSideQuestBoard(targetUserId);
-  const run = await getGameboardRun(targetUserId).catch(() => null);
+  const [run, highRollerRun] = await Promise.all([
+    getGameboardRun(targetUserId).catch(() => null),
+    getGameboardRun(targetUserId, HIGHROLLER_EVENT_ID).catch(() => null)
+  ]);
   const notifications = await listNotifications(targetUserId, { limit: 10 });
   return {
     user: toUser(userRows[0]),
@@ -1674,6 +1937,7 @@ export async function getSpectatorSnapshot(targetUserId: string) {
     state: board.state,
     updatedAt: board.updatedAt,
     gameboardRun: run,
+    highRollerRun,
     notifications
   };
 }

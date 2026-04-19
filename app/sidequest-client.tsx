@@ -3,6 +3,7 @@
 import Image from "next/image";
 import type { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { HighRollerBanner } from "./components/highroller-banner";
 import { LteBanner } from "./components/lte-banner";
 import { NotificationBell } from "./components/notification-bell";
 import { TutorialPlayer } from "./components/tutorial-player";
@@ -28,6 +29,16 @@ type LteRun = {
   rollsUsed: number;
   rollsAvailable: number;
   laps: number;
+  completedAt: string | null;
+};
+
+type HighRollerRun = {
+  position: number;
+  rollsEarned: number;
+  rollsUsed: number;
+  rollsAvailable: number;
+  laps: number;
+  peakPosition: number;
   completedAt: string | null;
 };
 
@@ -194,6 +205,7 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
   const [joinCode, setJoinCode] = useState("");
   const [showTutorial, setShowTutorial] = useState(true);
   const [lteRun, setLteRun] = useState<LteRun | null>(null);
+  const [highRollerRun, setHighRollerRun] = useState<HighRollerRun | null>(null);
   const [boardTutorialOpen, setBoardTutorialOpen] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
@@ -225,18 +237,48 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
     };
   }, []);
 
-  function grantLteRoll() {
-    if (!lteRun || lteRun.completedAt) return;
-    fetch("/api/gameboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "grant" })
-    })
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/highroller", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { run?: LteRun } | null) => {
-        if (data?.run) setLteRun(data.run);
+      .then((data: { run?: HighRollerRun } | null) => {
+        if (cancelled || !data?.run) return;
+        setHighRollerRun(data.run);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Spring Sprint takes priority while it's active. Once it's done, tokens
+  // flow to High Roller until that's done too. Both done = no-op.
+  function grantActiveEventToken() {
+    if (lteRun && !lteRun.completedAt) {
+      fetch("/api/gameboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "grant" })
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { run?: LteRun } | null) => {
+          if (data?.run) setLteRun(data.run);
+        })
+        .catch(() => {});
+      return;
+    }
+    if (highRollerRun && !highRollerRun.completedAt) {
+      fetch("/api/highroller", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "grant" })
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data: { run?: HighRollerRun } | null) => {
+          if (data?.run) setHighRollerRun(data.run);
+        })
+        .catch(() => {});
+    }
   }
 
   useEffect(() => {
@@ -572,7 +614,7 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
       );
     });
     setConfettiTitle(quest.title);
-    grantLteRoll();
+    grantActiveEventToken();
   }
 
   function createQuest(event: FormEvent<HTMLFormElement>) {
@@ -726,6 +768,12 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
           rollsAvailable={lteRun.rollsAvailable}
           position={lteRun.position}
           length={GAMEBOARD_LENGTH}
+        />
+      ) : highRollerRun && !highRollerRun.completedAt ? (
+        <HighRollerBanner
+          tokensAvailable={highRollerRun.rollsAvailable}
+          rung={highRollerRun.position}
+          busts={highRollerRun.laps}
         />
       ) : null}
 

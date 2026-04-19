@@ -1,20 +1,27 @@
 import Image from "next/image";
 import Link from "next/link";
+import { HighRollerBanner } from "../components/highroller-banner";
 import { LteBanner } from "../components/lte-banner";
 import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { GAMEBOARD_LENGTH } from "../lib/gameboard-config";
+import { HIGHROLLER_EVENT_ID } from "../lib/highroller-config";
 import { getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const [analytics, run] = await Promise.all([
+  const [analytics, springRun, highRollerRun] = await Promise.all([
     getSideQuestAnalytics(),
-    getGameboardRun(user.id)
+    getGameboardRun(user.id),
+    getGameboardRun(user.id, HIGHROLLER_EVENT_ID)
   ]);
-  const showLteBanner = !run.completedAt;
+  const activeBanner: "spring" | "high-roller" | null = !springRun.completedAt
+    ? "spring"
+    : !highRollerRun.completedAt
+      ? "high-roller"
+      : null;
 
   return (
     <main className="app-shell personal-shell">
@@ -34,11 +41,17 @@ export default async function DashboardPage() {
         </div>
       </nav>
 
-      {showLteBanner ? (
+      {activeBanner === "spring" ? (
         <LteBanner
-          rollsAvailable={run.rollsAvailable}
-          position={run.position}
+          rollsAvailable={springRun.rollsAvailable}
+          position={springRun.position}
           length={GAMEBOARD_LENGTH}
+        />
+      ) : activeBanner === "high-roller" ? (
+        <HighRollerBanner
+          tokensAvailable={highRollerRun.rollsAvailable}
+          rung={highRollerRun.position}
+          busts={highRollerRun.laps}
         />
       ) : null}
 
