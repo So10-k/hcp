@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../lib/auth";
-import { executeDailySpin, getDailySpinStatus } from "../../lib/sidequest-db";
+import {
+  enforceRateLimit,
+  executeDailySpin,
+  getDailySpinStatus
+} from "../../lib/sidequest-db";
 
 export const runtime = "nodejs";
 
@@ -28,6 +32,7 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in to spin." }, { status: 401 });
     }
+    await enforceRateLimit(user.id, "spin", 20);
     const body = (await request.json().catch(() => ({}))) as PostBody;
     if (body.action !== "spin") {
       return NextResponse.json({ error: "Unknown action." }, { status: 400 });

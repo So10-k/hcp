@@ -37,7 +37,7 @@ export const COPY: Record<string, { playful: string; pro: string }> = {
   dashboardEyebrow:   { playful: "Your personal dashboard",                 pro: "Overview" },
   dashboardWelcome:   { playful: "Welcome back,",                           pro: "Welcome back," },
   dashboardLede:      {
-    playful: "Check your week, jump into your board, or peek at admin analytics if your account has access.",
+    playful: "Check your week, jump into your board, or just have fun.",
     pro:     "Your tasks, achievements, and recent activity at a glance."
   },
   dashboardCtaPrimary:{ playful: "Open my board",                           pro: "Open tasks" },

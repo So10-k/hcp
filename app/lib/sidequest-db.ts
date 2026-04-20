@@ -320,9 +320,83 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
       ALTER TABLE sidequest_users
         ADD COLUMN IF NOT EXISTS preferred_mode text NOT NULL DEFAULT 'playful'
     `;
+    // Anti-exploit: server-side ledger of every quest a user has ever
+    // completed. Idempotent INSERTs here are the canonical "did this
+    // quest just transition to completed" signal — combo claims and
+    // event-token grants both validate against this.
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_quest_completions (
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        quest_id text NOT NULL,
+        completed_at timestamptz NOT NULL DEFAULT now(),
+        granted_event_id text,
+        PRIMARY KEY (user_id, quest_id)
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_quest_completions_recent_idx
+      ON sidequest_quest_completions (user_id, completed_at DESC)
+    `;
+    // Anti-exploit: per-endpoint rate limiting log. enforceRateLimit
+    // reads + inserts into this table to cap abuse on sensitive POSTs.
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_rate_log (
+        id bigserial PRIMARY KEY,
+        user_id text NOT NULL,
+        endpoint text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_rate_log_recent_idx
+      ON sidequest_rate_log (user_id, endpoint, created_at DESC)
+    `;
   })();
 
   return schemaPromise;
+}
+
+// ===========================================================================
+// Anti-exploit primitives — rate limiting, completion ledger, reward scrub.
+// ===========================================================================
+
+/**
+ * Per-user, per-endpoint rolling rate limit. Throws on overflow with a
+ * friendly message the API routes can pass straight back to the client.
+ *
+ * Cheap-and-cheerful: counts rows in the last 60s, inserts a new row,
+ * and occasionally GCs old rows. Not perfectly fair under bursts but
+ * does the job of stopping a script from hammering /api/spin.
+ */
+export async function enforceRateLimit(
+  userId: string,
+  endpoint: string,
+  maxPerMinute: number
+): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT COUNT(*)::int AS c FROM sidequest_rate_log
+    WHERE user_id = ${userId}
+      AND endpoint = ${endpoint}
+      AND created_at > now() - interval '60 seconds'
+  `) as Array<{ c: number }>;
+  const count = rows[0]?.c ?? 0;
+  if (count >= maxPerMinute) {
+    throw new Error("Slow down — too many requests. Try again in a moment.");
+  }
+  await sql`
+    INSERT INTO sidequest_rate_log (user_id, endpoint)
+    VALUES (${userId}, ${endpoint})
+  `;
+  // 1% chance to GC entries older than 10 minutes so the table stays tidy
+  // without needing a separate cron.
+  if (Math.random() < 0.01) {
+    await sql`
+      DELETE FROM sidequest_rate_log
+      WHERE created_at < now() - interval '10 minutes'
+    `;
+  }
 }
 
 export type GameboardRun = {
@@ -437,7 +511,7 @@ async function unlockGameboardReward(userId: string) {
     ...board.state,
     rewards: [reward, ...board.state.rewards]
   };
-  await saveSideQuestBoard(userId, nextState, "lte-reward-unlocked");
+  await saveSideQuestBoard(userId, nextState, "lte-reward-unlocked", { trusted: true });
 }
 
 export async function executeGameboardRoll(userId: string, eventId: string = GAMEBOARD_EVENT_ID): Promise<GameboardRollResult> {
@@ -559,7 +633,7 @@ async function unlockHighRollerReward(userId: string) {
     ...board.state,
     rewards: [reward, ...board.state.rewards]
   };
-  await saveSideQuestBoard(userId, nextState, "high-roller-reward-unlocked");
+  await saveSideQuestBoard(userId, nextState, "high-roller-reward-unlocked", { trusted: true });
 }
 
 export async function executeHighRollerFlip(userId: string): Promise<HighRollerFlipResult> {
@@ -998,7 +1072,7 @@ export async function loadSideQuestBoard(userId: string): Promise<BoardLoadResul
     const { state: reconciled, changed } = await reconcilePartyBoards(userId, base);
     if (changed) {
       // Persist the cleaned-up jsonb so the fix sticks for future loads.
-      return saveSideQuestBoard(userId, reconciled, "party-sync");
+      return saveSideQuestBoard(userId, reconciled, "party-sync", { trusted: true });
     }
     return {
       databaseReady: true,
@@ -1009,15 +1083,205 @@ export async function loadSideQuestBoard(userId: string): Promise<BoardLoadResul
 
   const starter = makeStarterState();
   const { state: reconciled } = await reconcilePartyBoards(userId, starter);
-  return saveSideQuestBoard(userId, reconciled, "starter-board-created");
+  return saveSideQuestBoard(userId, reconciled, "starter-board-created", { trusted: true });
 }
 
-export async function saveSideQuestBoard(userId: string, state: SideQuestState, eventType = "save"): Promise<BoardLoadResult> {
+/**
+ * Mirrors `rewardForQuest()` in app/sidequest-client.tsx so the server
+ * can recompute the canonical reward shape from a quest. Used by the
+ * scrub path so a malicious client can't submit a quest-derived reward
+ * with arbitrary title / image / note.
+ */
+function serverRewardForQuest(quest: { id: string; title: string; category: Category; rewardTitle: string }): Reward {
+  const image =
+    quest.category === "health"
+      ? "/sticker-leaf.svg"
+      : quest.category === "creative"
+        ? "/sticker-spark.svg"
+        : quest.category === "social"
+          ? "/sticker-bolt.svg"
+          : quest.category === "life admin"
+            ? "/sticker-shield.svg"
+            : "/sticker-star.svg";
+  return {
+    id: `reward-${quest.id}`,
+    title: quest.rewardTitle,
+    kind: quest.category === "school" || quest.category === "social" ? "badge" : "sticker",
+    image,
+    unlocked: true,
+    note: `Unlocked by finishing "${quest.title}".`
+  };
+}
+
+function collectCompletedQuestIds(state: SideQuestState): Set<string> {
+  const ids = new Set<string>();
+  for (const board of state.boards) {
+    for (const quest of board.quests) {
+      if (quest.completed) ids.add(quest.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Server-side allow-list filter for the user-supplied rewards array.
+ * Two things a reward must satisfy to survive the scrub:
+ *   1. It already existed on the user's previous reward shelf (carry
+ *      forward, with title/image/note frozen to the prior value to
+ *      block in-place mutation), OR
+ *   2. Its id matches `reward-<questId>` where `<questId>` is in the
+ *      set of newly-completed quests on this save — and we rebuild
+ *      the reward shape from the canonical quest, ignoring whatever
+ *      the client sent for title/image/note/kind.
+ * Anything else (admin awards, daily-spin drops, jackpot/combo badges)
+ * comes through `trusted: true` callers and bypasses this entirely.
+ */
+function scrubUserRewards(
+  prevState: SideQuestState,
+  nextState: SideQuestState,
+  newlyCompletedQuestIds: Set<string>
+): Reward[] {
+  const prevById = new Map(prevState.rewards.map((r) => [r.id, r]));
+  const allQuestsById = new Map<string, { id: string; title: string; category: Category; rewardTitle: string; completed: boolean }>();
+  for (const board of nextState.boards) {
+    for (const quest of board.quests) {
+      allQuestsById.set(quest.id, quest);
+    }
+  }
+  const seen = new Set<string>();
+  const result: Reward[] = [];
+  for (const incoming of nextState.rewards) {
+    if (!incoming || typeof incoming.id !== "string" || seen.has(incoming.id)) continue;
+    const canonical = prevById.get(incoming.id);
+    if (canonical) {
+      seen.add(incoming.id);
+      result.push(canonical);
+      continue;
+    }
+    const match = /^reward-(.+)$/.exec(incoming.id);
+    if (match) {
+      const questId = match[1];
+      if (newlyCompletedQuestIds.has(questId)) {
+        const quest = allQuestsById.get(questId);
+        if (quest && quest.completed) {
+          seen.add(incoming.id);
+          result.push(serverRewardForQuest(quest));
+          continue;
+        }
+      }
+    }
+    // Drop silently — any other reward must come from a trusted server flow.
+  }
+  return result;
+}
+
+/**
+ * Used by the auto-grant path. The "active" event mirrors the dashboard
+ * banner logic: Spring Sprint while it's open, then High Roller, then
+ * nothing. Returns the event id we granted to (or null if both are done).
+ */
+async function grantTokenForActiveEvent(userId: string): Promise<string | null> {
+  const [spring, hr] = await Promise.all([
+    ensureGameboardRun(userId, GAMEBOARD_EVENT_ID),
+    ensureGameboardRun(userId, HIGHROLLER_EVENT_ID)
+  ]);
+  if (!spring.completedAt) {
+    await grantGameboardRoll(userId, GAMEBOARD_EVENT_ID);
+    return GAMEBOARD_EVENT_ID;
+  }
+  if (!hr.completedAt) {
+    await grantGameboardRoll(userId, HIGHROLLER_EVENT_ID);
+    return HIGHROLLER_EVENT_ID;
+  }
+  return null;
+}
+
+/**
+ * Diff prev→next, find quest ids that just transitioned to completed,
+ * insert each into the ledger (idempotent via PK), and grant one event
+ * token per *first-time* completion (the ON CONFLICT guards against
+ * a client that tries to re-submit the same completion to farm tokens).
+ *
+ * Returns the set of quest ids that were *actually* freshly inserted —
+ * scrubUserRewards uses this to decide which reward-<id> entries the
+ * client is allowed to add this save.
+ */
+async function observeCompletionsAndGrant(
+  userId: string,
+  prevState: SideQuestState,
+  nextState: SideQuestState
+): Promise<Set<string>> {
   const sql = getSql();
-  const normalized = mergeWithStarterState(state);
+  const prevCompleted = collectCompletedQuestIds(prevState);
+  const candidates: string[] = [];
+  for (const id of collectCompletedQuestIds(nextState)) {
+    if (!prevCompleted.has(id)) candidates.push(id);
+  }
+  const fresh = new Set<string>();
+  for (const questId of candidates) {
+    const inserted = (await sql`
+      INSERT INTO sidequest_quest_completions (user_id, quest_id)
+      VALUES (${userId}, ${questId})
+      ON CONFLICT (user_id, quest_id) DO NOTHING
+      RETURNING quest_id
+    `) as Array<{ quest_id: string }>;
+    if (inserted.length > 0) {
+      fresh.add(questId);
+      const grantedEvent = await grantTokenForActiveEvent(userId);
+      if (grantedEvent) {
+        await sql`
+          UPDATE sidequest_quest_completions
+          SET granted_event_id = ${grantedEvent}
+          WHERE user_id = ${userId} AND quest_id = ${questId}
+        `;
+      }
+    }
+  }
+  return fresh;
+}
+
+export type SaveBoardOptions = {
+  /**
+   * Default `false`. When `false`, the incoming state goes through the
+   * anti-exploit pipeline: rewards are scrubbed against the previous
+   * state + the completion ledger, and any newly-completed quests are
+   * recorded in the ledger and credited with one event token each.
+   *
+   * Internal server flows (admin awards, daily-spin drops, event-reward
+   * unlocks, party sync, starter-board creation) pass `trusted: true`
+   * so they can write rewards directly without going through scrub.
+   */
+  trusted?: boolean;
+};
+
+export async function saveSideQuestBoard(
+  userId: string,
+  state: SideQuestState,
+  eventType = "save",
+  options: SaveBoardOptions = {}
+): Promise<BoardLoadResult> {
+  const sql = getSql();
+  const trusted = options.trusted === true;
+  let normalized = mergeWithStarterState(state);
   const boardId = boardIdForUser(userId);
 
   await ensureSideQuestSchema(sql);
+
+  if (!trusted) {
+    // Pull the prior state for diffing. If there's no prior row this is
+    // a brand-new user, in which case we use the starter state as the
+    // baseline (no rewards exist yet, so the scrub becomes a strict
+    // "must be a freshly-completed quest" filter).
+    const prevRows = (await sql`
+      SELECT state FROM sidequest_boards WHERE id = ${boardId} LIMIT 1
+    `) as Array<{ state: unknown }>;
+    const prevState = prevRows[0] ? normalizeState(prevRows[0].state) : makeStarterState();
+
+    const freshlyCompleted = await observeCompletionsAndGrant(userId, prevState, normalized);
+    const scrubbedRewards = scrubUserRewards(prevState, normalized, freshlyCompleted);
+    normalized = { ...normalized, rewards: scrubbedRewards };
+  }
+
   // Fan any local edits on party boards out to the authoritative party
   // rows first so other members see the change on their next refresh.
   await propagatePartyEdits(userId, normalized);
@@ -1056,7 +1320,7 @@ export async function getSideQuestAnalytics(): Promise<AnalyticsSnapshot> {
         state: normalizeState(rows[0].state),
         updatedAt: new Date(rows[0].updated_at).toISOString()
       }
-    : await saveSideQuestBoard("admin-seed", makeStarterState(), "admin-starter-board-created");
+    : await saveSideQuestBoard("admin-seed", makeStarterState(), "admin-starter-board-created", { trusted: true });
   const userRows = (await sql`
     SELECT
       id,
@@ -1832,7 +2096,7 @@ export async function adminAwardSticker(
     ...board.state,
     rewards: [reward, ...board.state.rewards]
   };
-  await saveSideQuestBoard(userId, nextState, "admin-award-sticker");
+  await saveSideQuestBoard(userId, nextState, "admin-award-sticker", { trusted: true });
   await writeAudit(adminId, userId, "award-sticker", { reward });
   await createNotification(userId, {
     kind: "award-sticker",
@@ -1865,7 +2129,7 @@ export async function adminAwardBadge(
     ...board.state,
     rewards: [reward, ...board.state.rewards]
   };
-  await saveSideQuestBoard(userId, nextState, "admin-award-badge");
+  await saveSideQuestBoard(userId, nextState, "admin-award-badge", { trusted: true });
   await writeAudit(adminId, userId, "award-badge", { badgeId: badge.id });
   await createNotification(userId, {
     kind: "award-badge",
@@ -2197,7 +2461,8 @@ async function applySpinPrize(
     await saveSideQuestBoard(
       userId,
       { ...board.state, rewards: [reward, ...board.state.rewards] },
-      "daily-spin-sticker"
+      "daily-spin-sticker",
+      { trusted: true }
     );
     await createNotification(userId, {
       kind: "daily-spin-won",
@@ -2221,7 +2486,8 @@ async function applySpinPrize(
       await saveSideQuestBoard(
         userId,
         { ...board.state, rewards: [reward, ...board.state.rewards] },
-        "daily-spin-jackpot"
+        "daily-spin-jackpot",
+        { trusted: true }
       );
       rewardId = SPIN_BADGE_JACKPOT.id;
     }
@@ -2249,19 +2515,22 @@ export async function executeDailySpin(userId: string): Promise<DailySpinResult>
   const sql = getSql();
   await ensureSideQuestSchema(sql);
   const key = todayKey();
-  const existing = (await sql`
-    SELECT 1 FROM sidequest_daily_spins
-    WHERE user_id = ${userId} AND date_key = ${key} LIMIT 1
-  `) as Array<{ "?column?": number }>;
-  if (existing.length > 0) {
-    throw new Error("You've already spun the wheel today. Come back tomorrow.");
-  }
   const prize = pickSpinPrize();
-  await sql`
+
+  // Anti-exploit: insert-first with ON CONFLICT DO NOTHING + RETURNING
+  // closes the SELECT-then-INSERT race. Two concurrent POSTs from the
+  // same user collapse to exactly one INSERT — only the winner gets
+  // a returned row, only the winner applies the prize.
+  const inserted = (await sql`
     INSERT INTO sidequest_daily_spins (user_id, date_key, prize_id, prize_kind, prize_amount)
     VALUES (${userId}, ${key}, ${prize.id}, ${prize.kind}, ${prize.amount})
     ON CONFLICT (user_id, date_key) DO NOTHING
-  `;
+    RETURNING user_id
+  `) as Array<{ user_id: string }>;
+  if (inserted.length === 0) {
+    throw new Error("You've already spun the wheel today. Come back tomorrow.");
+  }
+
   const rewardId = await applySpinPrize(userId, prize, {});
   const status = await getDailySpinStatus(userId);
   const prizeIndex = SPIN_PRIZES.findIndex((p) => p.id === prize.id);
@@ -2344,7 +2613,24 @@ export type ComboReport = {
 export async function recordCombo(userId: string, combo: number): Promise<ComboReport> {
   const sql = getSql();
   await ensureSideQuestSchema(sql);
-  const safe = Math.max(1, Math.min(100, Math.floor(combo)));
+  const claimed = Math.max(1, Math.min(100, Math.floor(combo)));
+
+  // Anti-exploit: the client can claim any combo number, so we clamp to
+  // the actual count of completions in the combo window from the ledger.
+  // Bots can't "fake" a combo unless they've actually completed that
+  // many distinct quests within 90s — and each completion is itself
+  // gated by the ledger PK, so they can't farm combos either.
+  const ledgerRows = (await sql`
+    SELECT COUNT(*)::int AS c FROM sidequest_quest_completions
+    WHERE user_id = ${userId}
+      AND completed_at > now() - interval '90 seconds'
+  `) as Array<{ c: number }>;
+  const ceiling = ledgerRows[0]?.c ?? 0;
+  const safe = Math.min(claimed, ceiling);
+  if (safe < 2) {
+    return { peakCombo: 0, totalCombos: 0, newBadge: null };
+  }
+
   const rows = (await sql`
     UPDATE sidequest_users
     SET peak_combo = GREATEST(peak_combo, ${safe}),
@@ -2375,7 +2661,8 @@ export async function recordCombo(userId: string, combo: number): Promise<ComboR
         await saveSideQuestBoard(
           userId,
           { ...board.state, rewards: [reward, ...board.state.rewards] },
-          `combo-badge-${threshold}`
+          `combo-badge-${threshold}`,
+          { trusted: true }
         );
         await createNotification(userId, {
           kind: "combo-milestone",

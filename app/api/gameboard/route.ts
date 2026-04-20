@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../lib/auth";
 import {
+  enforceRateLimit,
   executeGameboardRoll,
-  getGameboardRun,
-  grantGameboardRoll
+  getGameboardRun
 } from "../../lib/sidequest-db";
 
 export const runtime = "nodejs";
@@ -37,10 +37,17 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in to join the event." }, { status: 401 });
     }
+    await enforceRateLimit(user.id, "gameboard", 60);
     const body = (await request.json().catch(() => ({}))) as PostBody;
 
     if (body.action === "grant") {
-      const run = await grantGameboardRoll(user.id);
+      // Anti-exploit: token grants now happen server-side inside
+      // saveSideQuestBoard when a quest transitions to completed (gated
+      // by sidequest_quest_completions PK so each quest grants once).
+      // Keep the endpoint as an idempotent no-op for back-compat with
+      // the existing client; just return the current run so the UI
+      // refreshes.
+      const run = await getGameboardRun(user.id);
       return NextResponse.json({ run });
     }
 

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "../../lib/auth";
 import { HIGHROLLER_EVENT_ID } from "../../lib/highroller-config";
 import {
+  enforceRateLimit,
   executeHighRollerFlip,
-  getGameboardRun,
-  grantGameboardRoll
+  getGameboardRun
 } from "../../lib/sidequest-db";
 
 export const runtime = "nodejs";
@@ -38,10 +38,14 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in to climb the tower." }, { status: 401 });
     }
+    await enforceRateLimit(user.id, "highroller", 60);
     const body = (await request.json().catch(() => ({}))) as PostBody;
 
     if (body.action === "grant") {
-      const run = await grantGameboardRoll(user.id, HIGHROLLER_EVENT_ID);
+      // Anti-exploit: same as /api/gameboard — flip-token grants are
+      // server-driven from the completion ledger now. Keep this as an
+      // idempotent no-op for client back-compat.
+      const run = await getGameboardRun(user.id, HIGHROLLER_EVENT_ID);
       return NextResponse.json({ run });
     }
 
