@@ -27,6 +27,7 @@ export type SpinPrize = {
 export const SPIN_PRIZES: SpinPrize[] = [
   { id: "xp-25",   label: "+25 XP boost",          kind: "xp",      amount: 25, weight: 18, color: "#5fc7f2", textColor: "#171512", short: "+25 XP",   icon: "⚡", amountText: "+25",      kindLabel: "XP" },
   { id: "dice-2",  label: "+2 dice rolls",         kind: "dice",    amount: 2,  weight: 16, color: "#ffd43d", textColor: "#171512", short: "+2 🎲",    icon: "🎲", amountText: "+2",       kindLabel: "Dice" },
+  { id: "dice-3",  label: "+3 dice rolls",         kind: "dice",    amount: 3,  weight: 11, color: "#ffd43d", textColor: "#171512", short: "+3 🎲",    icon: "🎲", amountText: "+3",       kindLabel: "Dice" },
   { id: "flips-2", label: "+2 flip tokens",        kind: "flips",   amount: 2,  weight: 16, color: "#ff5a3d", textColor: "#171512", short: "+2 🪙",    icon: "🪙", amountText: "+2",       kindLabel: "Flips" },
   { id: "xp-75",   label: "+75 XP boost",          kind: "xp",      amount: 75, weight: 12, color: "#44d7a8", textColor: "#171512", short: "+75 XP",   icon: "💫", amountText: "+75",      kindLabel: "XP" },
   { id: "dice-5",  label: "+5 dice rolls",         kind: "dice",    amount: 5,  weight: 10, color: "#ff8a3d", textColor: "#171512", short: "+5 🎲",    icon: "🎲", amountText: "+5",       kindLabel: "Dice" },
