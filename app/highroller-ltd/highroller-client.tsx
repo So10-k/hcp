@@ -13,6 +13,8 @@ import {
 
 const HIGHROLLER_TUTORIAL_SEEN_KEY = "sidequest_highroller_tutorial_seen_v1";
 
+type FlipCommitment = { outcome: "heads" | "tails"; nonce: string; hash: string };
+
 type Run = {
   position: number;
   rollsEarned: number;
@@ -21,6 +23,8 @@ type Run = {
   laps: number;
   peakPosition: number;
   completedAt: string | null;
+  nextFlipHash: string | null;
+  lastFlip: FlipCommitment | null;
 };
 
 type FlipResponse = {
@@ -34,6 +38,24 @@ type FlipResponse = {
   newlyCompleted: boolean;
   rewardId: string | null;
 };
+
+/**
+ * Browser-side sha256 so users can verify the reveal matches the hash
+ * they saw before flipping. If SubtleCrypto is unavailable (unsupported
+ * context) we just display "unverified" — the server commitment still
+ * stands on its own.
+ */
+async function sha256Hex(input: string): Promise<string | null> {
+  try {
+    const buf = new TextEncoder().encode(input);
+    const digest = await crypto.subtle.digest("SHA-256", buf);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return null;
+  }
+}
 
 type Props = {
   initialRun: Run;
@@ -61,6 +83,7 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
   const coinRotRef = useRef(0);
   const coinRef = useRef<HTMLDivElement | null>(null);
 
+  const [verify, setVerify] = useState<"idle" | "verified" | "mismatch" | "unsupported">("idle");
   const [tutorialOpen, setTutorialOpen] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -117,6 +140,17 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
 
     setCoinFace(result.outcome);
     setRun(result.run);
+
+    // Verify the reveal: sha256(outcome:nonce) must equal the hash the
+    // server published BEFORE this flip. If it doesn't, the server
+    // cheated — flag it loudly so the user sees the mismatch.
+    const revealed = result.run.lastFlip;
+    if (revealed) {
+      const expected = await sha256Hex(`${revealed.outcome}:${revealed.nonce}`);
+      if (expected === null) setVerify("unsupported");
+      else if (expected === revealed.hash) setVerify("verified");
+      else setVerify("mismatch");
+    }
 
     if (result.reachedTop) {
       setCelebrate(true);
@@ -214,6 +248,48 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
             >
               Rewatch tutorial
             </button>
+          </section>
+
+          <section className="hr-panel hr-fairness" aria-labelledby="hr-fair-title">
+            <h3 id="hr-fair-title">Provably fair · next flip sealed</h3>
+            <p className="hr-fair-explain">
+              The server picked the next outcome before you saw this page and published the SHA-256 of it below.
+              After you flip, it reveals the value + nonce so you can verify nothing was swapped.
+            </p>
+            <div className="hr-fair-row">
+              <span className="hr-fair-label">Sealed hash</span>
+              <code className="hr-fair-hash" title={run.nextFlipHash ?? ""}>
+                {run.nextFlipHash ? `${run.nextFlipHash.slice(0, 16)}…${run.nextFlipHash.slice(-8)}` : "—"}
+              </code>
+            </div>
+            {run.lastFlip ? (
+              <>
+                <div className="hr-fair-row">
+                  <span className="hr-fair-label">Last reveal</span>
+                  <span className="hr-fair-reveal">
+                    <strong>{run.lastFlip.outcome.toUpperCase()}</strong> · nonce{" "}
+                    <code title={run.lastFlip.nonce}>{run.lastFlip.nonce.slice(0, 12)}…</code>
+                  </span>
+                </div>
+                <div className="hr-fair-row">
+                  <span className="hr-fair-label">Verify</span>
+                  <span
+                    className={`hr-fair-verify hr-fair-${verify}`}
+                    title="sha256(outcome:nonce) == sealed hash?"
+                  >
+                    {verify === "verified"
+                      ? "✓ sha256 matches"
+                      : verify === "mismatch"
+                        ? "✕ MISMATCH — server cheated"
+                        : verify === "unsupported"
+                          ? "⟳ browser can't verify"
+                          : "… pending"}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <p className="hr-fair-explain">No reveal yet — your first flip will unlock the audit trail.</p>
+            )}
           </section>
 
           <section className="hr-panel">

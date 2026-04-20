@@ -52,7 +52,9 @@ export default async function HighRollerLtdPage() {
           rollsAvailable: run.rollsAvailable,
           laps: run.laps,
           peakPosition: run.peakPosition,
-          completedAt: run.completedAt
+          completedAt: run.completedAt,
+          nextFlipHash: run.nextFlipHash,
+          lastFlip: run.lastFlip
         }}
         rungCount={HIGHROLLER_RUNG_COUNT}
         playerLabel={user.username?.slice(0, 3).toUpperCase() || "YOU"}

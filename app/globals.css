@@ -8127,3 +8127,70 @@ body {
   .event-controls { padding: 0.9rem 1rem; }
   .event-controls-switch button { font-size: 0.72rem; padding: 0.5rem 0.7rem; }
 }
+
+/* =========================================================================
+   High Roller provably-fair panel — sealed hash + reveal + verify chip.
+   ========================================================================= */
+.hr-fairness { background: #fffaf0; }
+.hr-fair-explain {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  opacity: 0.82;
+  margin: 0 0 0.7rem 0;
+}
+.hr-fair-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 2px dashed rgba(23, 21, 18, 0.22);
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+.hr-fair-row:first-of-type { border-top: 0; }
+.hr-fair-label {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+.hr-fair-hash,
+.hr-fair-reveal code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--ink);
+  color: #ffd43d;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  word-break: break-all;
+}
+.hr-fair-reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.hr-fair-reveal strong {
+  padding: 0.15rem 0.45rem;
+  background: var(--yellow);
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+}
+.hr-fair-verify {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 900;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 2px solid var(--ink);
+}
+.hr-fair-verified { background: var(--mint); }
+.hr-fair-mismatch { background: var(--red); color: #fff; }
+.hr-fair-unsupported { background: #eadbb9; }
+.hr-fair-idle { background: #fff; opacity: 0.7; }

@@ -228,6 +228,20 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
       ALTER TABLE sidequest_gameboard_runs
         ADD COLUMN IF NOT EXISTS peak_position integer NOT NULL DEFAULT 0
     `;
+    // Provably-fair commit-reveal for High Roller flips. The server
+    // pre-picks the next outcome and nonce, stores the sha256 hash,
+    // and exposes the hash via GET /api/highroller BEFORE the flip.
+    // On the flip itself the stored outcome is used (no new randomness
+    // at flip time) and the nonce is revealed so the client can verify
+    // sha256(outcome:nonce) == the hash it saw earlier. Columns are
+    // nullable because Spring Sprint runs share this table and don't
+    // need commitments.
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS next_flip_outcome text`;
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS next_flip_nonce text`;
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS next_flip_hash text`;
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS last_flip_outcome text`;
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS last_flip_nonce text`;
+    await sql`ALTER TABLE sidequest_gameboard_runs ADD COLUMN IF NOT EXISTS last_flip_hash text`;
     await sql`
       CREATE TABLE IF NOT EXISTS sidequest_gameboard_events (
         id bigserial PRIMARY KEY,
@@ -429,6 +443,12 @@ export async function enforceRateLimit(
   }
 }
 
+export type FlipCommitment = {
+  outcome: "heads" | "tails";
+  nonce: string;
+  hash: string;
+};
+
 export type GameboardRun = {
   userId: string;
   eventId: string;
@@ -441,6 +461,10 @@ export type GameboardRun = {
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Exposed BEFORE the next flip so the client can see the hash. */
+  nextFlipHash: string | null;
+  /** Reveal of the previous flip so the client can audit. Null before the first flip. */
+  lastFlip: FlipCommitment | null;
 };
 
 export type GameboardRollResult = {
@@ -464,9 +488,20 @@ type GameboardRunRow = {
   completed_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  next_flip_hash?: string | null;
+  last_flip_outcome?: string | null;
+  last_flip_nonce?: string | null;
+  last_flip_hash?: string | null;
 };
 
 function toGameboardRun(row: GameboardRunRow): GameboardRun {
+  const lastOutcome = row.last_flip_outcome;
+  const lastNonce = row.last_flip_nonce;
+  const lastHash = row.last_flip_hash;
+  const lastFlip: FlipCommitment | null =
+    lastOutcome && lastNonce && lastHash && (lastOutcome === "heads" || lastOutcome === "tails")
+      ? { outcome: lastOutcome, nonce: lastNonce, hash: lastHash }
+      : null;
   return {
     userId: row.user_id,
     eventId: row.event_id,
@@ -478,8 +513,24 @@ function toGameboardRun(row: GameboardRunRow): GameboardRun {
     peakPosition: row.peak_position ?? row.position ?? 0,
     completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
     createdAt: new Date(row.created_at).toISOString(),
-    updatedAt: new Date(row.updated_at).toISOString()
+    updatedAt: new Date(row.updated_at).toISOString(),
+    nextFlipHash: row.next_flip_hash ?? null,
+    lastFlip
   };
+}
+
+/**
+ * Server-side pre-pick of a coin flip. Returns the outcome, a random
+ * 16-byte hex nonce, and the sha256 of `outcome:nonce`. The hash is
+ * published to the client BEFORE the flip; after the flip, the outcome
+ * and nonce are revealed so the client can recompute sha256 and verify
+ * the server didn't swap the outcome between the commit and the reveal.
+ */
+function generateFlipCommitment(): FlipCommitment {
+  const outcome: "heads" | "tails" = Math.random() < 0.5 ? "heads" : "tails";
+  const nonce = randomBytes(16).toString("hex");
+  const hash = createHash("sha256").update(`${outcome}:${nonce}`).digest("hex");
+  return { outcome, nonce, hash };
 }
 
 async function ensureGameboardRun(userId: string, eventId: string): Promise<GameboardRun> {
@@ -490,9 +541,29 @@ async function ensureGameboardRun(userId: string, eventId: string): Promise<Game
     VALUES (${userId}, ${eventId})
     ON CONFLICT (user_id, event_id) DO NOTHING
   `;
+  // Lazily seed a flip commitment for High Roller runs that don't have
+  // one yet (new runs + older rows that existed before commit-reveal
+  // shipped). Spring Sprint runs never touch these columns.
+  if (eventId === HIGHROLLER_EVENT_ID) {
+    const pending = (await sql`
+      SELECT next_flip_outcome FROM sidequest_gameboard_runs
+      WHERE user_id = ${userId} AND event_id = ${eventId} LIMIT 1
+    `) as Array<{ next_flip_outcome: string | null }>;
+    if (!pending[0]?.next_flip_outcome) {
+      const commit = generateFlipCommitment();
+      await sql`
+        UPDATE sidequest_gameboard_runs
+        SET next_flip_outcome = ${commit.outcome},
+            next_flip_nonce = ${commit.nonce},
+            next_flip_hash = ${commit.hash}
+        WHERE user_id = ${userId} AND event_id = ${eventId}
+      `;
+    }
+  }
   const rows = (await sql`
     SELECT user_id, event_id, position, rolls_earned, rolls_used, laps,
-           peak_position, completed_at, created_at, updated_at
+           peak_position, completed_at, created_at, updated_at,
+           next_flip_hash, last_flip_outcome, last_flip_nonce, last_flip_hash
     FROM sidequest_gameboard_runs
     WHERE user_id = ${userId} AND event_id = ${eventId}
     LIMIT 1
@@ -677,7 +748,31 @@ export async function executeHighRollerFlip(userId: string): Promise<HighRollerF
     throw new Error("No flip tokens — complete a quest to earn one.");
   }
 
-  const heads = Math.random() < 0.5;
+  // Pull the sealed commitment this user saw on GET. The outcome was
+  // decided at commit time, not now — this flip consumes it and a fresh
+  // commitment takes its place for the next flip.
+  const committed = (await sql`
+    SELECT next_flip_outcome, next_flip_nonce, next_flip_hash
+    FROM sidequest_gameboard_runs
+    WHERE user_id = ${userId} AND event_id = ${HIGHROLLER_EVENT_ID}
+    LIMIT 1
+  `) as Array<{
+    next_flip_outcome: string | null;
+    next_flip_nonce: string | null;
+    next_flip_hash: string | null;
+  }>;
+  const prior = committed[0];
+  const priorOutcome =
+    prior?.next_flip_outcome === "heads" || prior?.next_flip_outcome === "tails"
+      ? prior.next_flip_outcome
+      : null;
+  const revealedOutcome: "heads" | "tails" = priorOutcome ?? (Math.random() < 0.5 ? "heads" : "tails");
+  const revealedNonce = prior?.next_flip_nonce ?? randomBytes(16).toString("hex");
+  const revealedHash =
+    prior?.next_flip_hash ??
+    createHash("sha256").update(`${revealedOutcome}:${revealedNonce}`).digest("hex");
+
+  const heads = revealedOutcome === "heads";
   const fromRung = current.position;
   let toRung = fromRung;
   let busts = current.laps;
@@ -700,12 +795,24 @@ export async function executeHighRollerFlip(userId: string): Promise<HighRollerF
   const reachedTop = toRung >= HIGHROLLER_RUNG_COUNT;
   const peak = Math.max(current.peakPosition, toRung);
 
+  // Commit-reveal rotation: the outcome we just used moves to last_flip_*
+  // (so the user can verify sha256(outcome:nonce) == the hash they saw),
+  // and a fresh commitment is generated for the next flip and stored in
+  // next_flip_* (exposed to the client right away on the response).
+  const nextCommit = generateFlipCommitment();
+
   await sql`
     UPDATE sidequest_gameboard_runs
     SET position = ${toRung},
         rolls_used = rolls_used + 1,
         laps = ${busts},
         peak_position = ${peak},
+        last_flip_outcome = ${revealedOutcome},
+        last_flip_nonce = ${revealedNonce},
+        last_flip_hash = ${revealedHash},
+        next_flip_outcome = ${nextCommit.outcome},
+        next_flip_nonce = ${nextCommit.nonce},
+        next_flip_hash = ${nextCommit.hash},
         updated_at = now()
     WHERE user_id = ${userId} AND event_id = ${HIGHROLLER_EVENT_ID}
   `;
@@ -2436,6 +2543,9 @@ export async function userRestartOwnEvent(userId: string, eventId: string): Prom
   }
   const sql = getSql();
   await ensureGameboardRun(userId, eventId);
+  // High Roller needs a fresh commit-reveal commitment on restart so
+  // the replayed run doesn't reuse the previous run's pre-picked flip.
+  const fresh = eventId === HIGHROLLER_EVENT_ID ? generateFlipCommitment() : null;
   await sql`
     UPDATE sidequest_gameboard_runs
     SET position = 0,
@@ -2444,6 +2554,12 @@ export async function userRestartOwnEvent(userId: string, eventId: string): Prom
         laps = 0,
         peak_position = 0,
         completed_at = NULL,
+        last_flip_outcome = NULL,
+        last_flip_nonce = NULL,
+        last_flip_hash = NULL,
+        next_flip_outcome = ${fresh?.outcome ?? null},
+        next_flip_nonce = ${fresh?.nonce ?? null},
+        next_flip_hash = ${fresh?.hash ?? null},
         updated_at = now()
     WHERE user_id = ${userId} AND event_id = ${eventId}
   `;
@@ -2478,6 +2594,7 @@ export async function adminResetGameboardEvent(
 ): Promise<void> {
   const sql = getSql();
   await ensureGameboardRun(userId, eventId);
+  const fresh = eventId === HIGHROLLER_EVENT_ID ? generateFlipCommitment() : null;
   await sql`
     UPDATE sidequest_gameboard_runs
     SET position = 0,
@@ -2486,6 +2603,12 @@ export async function adminResetGameboardEvent(
         laps = 0,
         peak_position = 0,
         completed_at = NULL,
+        last_flip_outcome = NULL,
+        last_flip_nonce = NULL,
+        last_flip_hash = NULL,
+        next_flip_outcome = ${fresh?.outcome ?? null},
+        next_flip_nonce = ${fresh?.nonce ?? null},
+        next_flip_hash = ${fresh?.hash ?? null},
         updated_at = now()
     WHERE user_id = ${userId} AND event_id = ${eventId}
   `;
