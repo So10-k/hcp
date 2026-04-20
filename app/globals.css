@@ -8041,3 +8041,89 @@ body {
   transform: translate(-1px, -1px);
   box-shadow: 4px 4px 0 var(--ink);
 }
+
+/* =========================================================================
+   Event controls on /dashboard: active-event preference + replay buttons.
+   Shipped with the deadline-enforcement pass so users aren't stuck routing
+   tokens to a completed event.
+   ========================================================================= */
+.event-controls {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem 1.3rem;
+  background: var(--cream);
+  border: 3px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--ink);
+  border-radius: 18px;
+  margin-bottom: 1.5rem;
+}
+.event-controls-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.event-controls-head strong {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.event-controls-head small {
+  font-size: 0.82rem;
+  opacity: 0.78;
+}
+.event-controls-switch {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.event-controls-switch button {
+  padding: 0.55rem 0.9rem;
+  border: 3px solid var(--ink);
+  background: #fff;
+  border-radius: 999px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+  min-height: 44px;
+}
+.event-controls-switch button:hover { transform: translate(-1px, -1px); }
+.event-controls-switch button.is-active {
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.event-controls-switch button:disabled { opacity: 0.55; cursor: not-allowed; }
+.event-controls-restart {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.event-controls-error {
+  color: var(--red);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* =========================================================================
+   Quest card late / fresh states for the deadline-enforcement pass.
+   ========================================================================= */
+.quest-card.is-late {
+  outline: 3px solid var(--red);
+  outline-offset: -3px;
+}
+.quest-card.is-late .quest-card-top span:last-child {
+  color: var(--red);
+  font-weight: 900;
+}
+.quest-card.is-fresh .quest-actions .primary-button {
+  background: #eadbb9;
+  color: var(--ink);
+  cursor: not-allowed;
+}
+@media (max-width: 720px) {
+  .event-controls { padding: 0.9rem 1rem; }
+  .event-controls-switch button { font-size: 0.72rem; padding: 0.5rem 0.7rem; }
+}

@@ -44,10 +44,38 @@ type HighRollerRun = {
   completedAt: string | null;
 };
 
+function ymd(offsetDays: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function labelForDueDate(ymdString: string): string {
+  const target = new Date(`${ymdString}T12:00:00`);
+  const now = new Date();
+  const days = Math.round((target.getTime() - now.setHours(12, 0, 0, 0)) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days <= 6) return target.toLocaleDateString(undefined, { weekday: "short" });
+  return target.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function dueAtFromDate(ymdString: string): string {
+  // Server enforces deadlines against this timestamp. Pin to 23:59 local
+  // so "Due Friday" means end-of-Friday, not midnight Thursday night.
+  const d = new Date(`${ymdString}T23:59:59`);
+  return d.toISOString();
+}
+
+const MIN_QUEST_AGE_MS_CLIENT = 10 * 60 * 1000;
+
 const defaultDraft = {
   title: "",
   category: "school" as Category,
-  dueLabel: "This week",
+  dueDate: ymd(3),
   xp: 75,
   party: "Solo",
   steps: "Open the assignment\nMake the first draft\nShip the final version"
@@ -91,7 +119,6 @@ const questWizardSteps = [
   }
 ] as const;
 
-const duePresets = ["Today", "Tomorrow", "This week", "Weekend", "Next club meet"];
 const xpPresets = [50, 75, 100, 125, 150];
 const partyPresets = ["Solo", "Ava, Jay", "Mia, Leo", "Study squad"];
 
@@ -580,6 +607,21 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
       return;
     }
 
+    // Anti-cheat: the server rejects completions newer than 10 minutes.
+    // Catch it here so the UI doesn't flash "completed" and snap back.
+    // Server is still authoritative — this is just UX.
+    if (quest.createdAt) {
+      const ageMs = Date.now() - new Date(quest.createdAt).getTime();
+      if (Number.isFinite(ageMs) && ageMs < MIN_QUEST_AGE_MS_CLIENT) {
+        const minsLeft = Math.max(1, Math.ceil((MIN_QUEST_AGE_MS_CLIENT - ageMs) / 60000));
+        setSyncStatus("error");
+        setSyncError(
+          `Quests need at least 10 minutes on the board before you can clear them (~${minsLeft} min left). Deadlines are real now — no instant clears.`
+        );
+        return;
+      }
+    }
+
     const reward = rewardForQuest(quest);
 
     setState((current) => {
@@ -636,11 +678,14 @@ export default function SideQuestClient({ isAdmin = false }: { isAdmin?: boolean
       .filter(Boolean);
     const questParty = isPersonalBoard ? ["Solo"] : party.length > 0 ? party : ["You"];
 
+    const dueDate = draft.dueDate || ymd(3);
     const quest: Quest = {
       id: makeId("quest"),
       title,
       category: draft.category,
-      dueLabel: draft.dueLabel.trim() || "This week",
+      dueLabel: labelForDueDate(dueDate),
+      dueAt: dueAtFromDate(dueDate),
+      createdAt: new Date().toISOString(),
       xp: Math.min(250, Math.max(10, Number.isFinite(draft.xp) ? draft.xp : 75)),
       progress: 0,
       completed: false,
@@ -1130,12 +1175,21 @@ function QuestCard({
   onProgress: (questId: string, amount: number) => void;
 }) {
   const meta = categoryMeta[quest.category];
+  const dueAtMs = quest.dueAt ? new Date(quest.dueAt).getTime() : null;
+  const isLate = dueAtMs !== null && !quest.completed && Date.now() > dueAtMs;
+  const createdAtMs = quest.createdAt ? new Date(quest.createdAt).getTime() : null;
+  const ageMs = createdAtMs !== null ? Date.now() - createdAtMs : Infinity;
+  const isFresh = !quest.completed && Number.isFinite(ageMs) && ageMs < MIN_QUEST_AGE_MS_CLIENT;
+  const minsLeftFresh = isFresh ? Math.max(1, Math.ceil((MIN_QUEST_AGE_MS_CLIENT - ageMs) / 60000)) : 0;
 
   return (
-    <article className={`quest-card ${meta.className} ${quest.completed ? "is-complete" : ""}`}>
+    <article className={`quest-card ${meta.className} ${quest.completed ? "is-complete" : ""} ${isLate ? "is-late" : ""} ${isFresh ? "is-fresh" : ""}`}>
       <div className="quest-card-top">
         <span className="quest-chip">{meta.short}</span>
-        <span>{quest.dueLabel}</span>
+        <span>
+          {isLate ? "⚠ LATE · " : ""}
+          {quest.dueLabel}
+        </span>
       </div>
       <div className="quest-card-art" aria-hidden="true">
         <span>{meta.short}</span>
@@ -1172,8 +1226,20 @@ function QuestCard({
         <button type="button" className="ghost-button small" onClick={() => onProgress(quest.id, 25)} disabled={quest.completed}>
           +25%
         </button>
-        <button type="button" className="primary-button small" onClick={() => onComplete(quest.id)} disabled={quest.completed}>
-          {quest.completed ? "Cleared" : "Complete"}
+        <button
+          type="button"
+          className="primary-button small"
+          onClick={() => onComplete(quest.id)}
+          disabled={quest.completed || isFresh}
+          title={isFresh ? `Wait ~${minsLeftFresh} min — no instant clears.` : undefined}
+        >
+          {quest.completed
+            ? "Cleared"
+            : isFresh
+              ? `Wait ${minsLeftFresh}m`
+              : isLate
+                ? "Complete · late"
+                : "Complete"}
         </button>
       </div>
     </article>
@@ -1437,7 +1503,7 @@ function CreateQuestModal({
   const displayParty = party.length > 0 ? party : ["Solo"];
   const previewParty = boardKind === "personal" ? ["Solo"] : displayParty;
   const displayTitle = draft.title.trim() || "Untitled side quest";
-  const displayDue = draft.dueLabel.trim() || "This week";
+  const displayDue = draft.dueDate ? labelForDueDate(draft.dueDate) : "This week";
   const canAdvance = stepIndex > 0 || draft.title.trim().length > 0;
 
   function goToStep(index: number) {
@@ -1537,24 +1603,43 @@ function CreateQuestModal({
 
                     <div className="wizard-chip-row" aria-label="Due date presets">
                       <strong>Due</strong>
-                      {duePresets.map((due) => (
-                        <button
-                          type="button"
-                          key={due}
-                          className={draft.dueLabel === due ? "is-active" : ""}
-                          onClick={() => onChange({ ...draft, dueLabel: due })}
-                        >
-                          {due}
-                        </button>
-                      ))}
+                      <button
+                        type="button"
+                        className={draft.dueDate === ymd(0) ? "is-active" : ""}
+                        onClick={() => onChange({ ...draft, dueDate: ymd(0) })}
+                      >
+                        Today
+                      </button>
+                      <button
+                        type="button"
+                        className={draft.dueDate === ymd(1) ? "is-active" : ""}
+                        onClick={() => onChange({ ...draft, dueDate: ymd(1) })}
+                      >
+                        Tomorrow
+                      </button>
+                      <button
+                        type="button"
+                        className={draft.dueDate === ymd(3) ? "is-active" : ""}
+                        onClick={() => onChange({ ...draft, dueDate: ymd(3) })}
+                      >
+                        +3 days
+                      </button>
+                      <button
+                        type="button"
+                        className={draft.dueDate === ymd(7) ? "is-active" : ""}
+                        onClick={() => onChange({ ...draft, dueDate: ymd(7) })}
+                      >
+                        Next week
+                      </button>
                     </div>
 
                     <label className="wizard-compact-field">
-                      <span>Custom due text</span>
+                      <span>Pick a real deadline · miss it and you forfeit the token reward</span>
                       <input
-                        value={draft.dueLabel}
-                        onChange={(event) => onChange({ ...draft, dueLabel: event.target.value })}
-                        placeholder="Before Friday practice"
+                        type="date"
+                        min={ymd(0)}
+                        value={draft.dueDate}
+                        onChange={(event) => onChange({ ...draft, dueDate: event.target.value || ymd(3) })}
                       />
                     </label>
                   </div>

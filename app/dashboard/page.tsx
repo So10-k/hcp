@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { DailySpinTrigger } from "../components/daily-spin-trigger";
+import { EventControls } from "../components/event-controls";
 import { HighRollerBanner } from "../components/highroller-banner";
 import { LteBanner } from "../components/lte-banner";
 import { NotificationBell } from "../components/notification-bell";
@@ -62,6 +63,12 @@ export default async function DashboardPage() {
           busts={highRollerRun.laps}
         />
       ) : null}
+
+      <EventControls
+        initialPreference={user.activeEventPreference}
+        springCompleted={!!springRun.completedAt}
+        highRollerCompleted={!!highRollerRun.completedAt}
+      />
 
       <section className="personal-hero" aria-labelledby="personal-title">
         <div>

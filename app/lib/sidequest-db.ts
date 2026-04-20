@@ -85,6 +85,12 @@ export const DEFAULT_BOARD_ID = "primary-party-board";
 let sqlClient: Sql | null = null;
 let schemaPromise: Promise<void> | null = null;
 
+export type ActiveEventPreference = "auto" | "spring" | "high-roller";
+
+function normalizeEventPreference(value: unknown): ActiveEventPreference {
+  return value === "spring" || value === "high-roller" ? value : "auto";
+}
+
 export type AuthUser = {
   id: string;
   name: string;
@@ -95,6 +101,7 @@ export type AuthUser = {
   suspendedAt: string | null;
   suspendedReason: string | null;
   preferredMode: PreferredMode;
+  activeEventPreference: ActiveEventPreference;
 };
 
 export type SignUpInput = {
@@ -130,6 +137,7 @@ type UserRow = {
   suspended_reason?: string | null;
   suspended_by?: string | null;
   preferred_mode?: string | null;
+  active_event_preference?: string | null;
 };
 
 export function getSql() {
@@ -350,6 +358,28 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
     await sql`
       CREATE INDEX IF NOT EXISTS sidequest_rate_log_recent_idx
       ON sidequest_rate_log (user_id, endpoint, created_at DESC)
+    `;
+    // Anti-cheat: server-owned quest timestamps. A quest is valid for
+    // token reward only if (a) it's older than QUEST_MIN_AGE_MS (stops
+    // the "create + instantly mark off" cheat) and (b) completed on
+    // time (past-due completions get logged but don't pay out a token).
+    // Client-supplied createdAt is informational — this row is truth.
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_quest_meta (
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        quest_id text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        due_at timestamptz NOT NULL,
+        PRIMARY KEY (user_id, quest_id)
+      )
+    `;
+    // Lets the user (and admin) pick which event tokens route to when
+    // multiple are open. 'auto' = fall back to the original
+    // Spring-then-High-Roller priority. 'spring' / 'high-roller' =
+    // pin that event first, with fall-through if it's completed.
+    await sql`
+      ALTER TABLE sidequest_users
+        ADD COLUMN IF NOT EXISTS active_event_preference text NOT NULL DEFAULT 'auto'
     `;
   })();
 
@@ -777,7 +807,8 @@ function toAuthUser(row: UserRow): AuthUser {
     favoriteCategory,
     suspendedAt: row.suspended_at ? new Date(row.suspended_at).toISOString() : null,
     suspendedReason: row.suspended_reason ?? null,
-    preferredMode: normalizeMode(row.preferred_mode)
+    preferredMode: normalizeMode(row.preferred_mode),
+    activeEventPreference: normalizeEventPreference(row.active_event_preference)
   };
 }
 
@@ -911,7 +942,8 @@ export async function signUpSideQuestUser(input: SignUpInput) {
         quests_completed,
         joined_at,
         last_active_at,
-        preferred_mode
+        preferred_mode,
+        active_event_preference
     `) as UserRow[];
   } catch (error) {
     // Translate raw unique-constraint errors from the DB into friendly copy
@@ -959,7 +991,8 @@ export async function loginSideQuestUser(input: LoginInput) {
       suspended_at,
       suspended_reason,
       suspended_by,
-      preferred_mode
+      preferred_mode,
+      active_event_preference
     FROM sidequest_users
     WHERE lower(email) = ${usernameOrEmail}
       OR lower(username) = ${usernameOrEmail}
@@ -1026,7 +1059,8 @@ export async function getUserBySessionToken(token: string | undefined) {
       users.suspended_at,
       users.suspended_reason,
       users.suspended_by,
-      users.preferred_mode
+      users.preferred_mode,
+      users.active_event_preference
     FROM sidequest_sessions sessions
     INNER JOIN sidequest_users users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ${hashToken(token)}
@@ -1176,41 +1210,140 @@ function scrubUserRewards(
 }
 
 /**
- * Used by the auto-grant path. The "active" event mirrors the dashboard
- * banner logic: Spring Sprint while it's open, then High Roller, then
- * nothing. Returns the event id we granted to (or null if both are done).
+ * Used by the auto-grant path. Picks the event to credit based on the
+ * user's `active_event_preference`:
+ *   - 'auto' (default) → Spring Sprint while open, then High Roller,
+ *     then nothing. (Same as the dashboard banner.)
+ *   - 'spring' / 'high-roller' → prefer that event, fall through to
+ *     the other if it's already completed.
+ *
+ * Returns the event id we granted to (or null if both are done).
  */
 async function grantTokenForActiveEvent(userId: string): Promise<string | null> {
-  const [spring, hr] = await Promise.all([
+  const sql = getSql();
+  const [spring, hr, prefRows] = await Promise.all([
     ensureGameboardRun(userId, GAMEBOARD_EVENT_ID),
-    ensureGameboardRun(userId, HIGHROLLER_EVENT_ID)
+    ensureGameboardRun(userId, HIGHROLLER_EVENT_ID),
+    sql`SELECT active_event_preference FROM sidequest_users WHERE id = ${userId} LIMIT 1`
   ]);
-  if (!spring.completedAt) {
-    await grantGameboardRoll(userId, GAMEBOARD_EVENT_ID);
-    return GAMEBOARD_EVENT_ID;
-  }
-  if (!hr.completedAt) {
-    await grantGameboardRoll(userId, HIGHROLLER_EVENT_ID);
-    return HIGHROLLER_EVENT_ID;
+  const prefRow = (prefRows as Array<{ active_event_preference: string | null }>)[0];
+  const preference = normalizeEventPreference(prefRow?.active_event_preference);
+
+  const order: Array<{ id: string; open: boolean }> = (() => {
+    const spr = { id: GAMEBOARD_EVENT_ID, open: !spring.completedAt };
+    const highr = { id: HIGHROLLER_EVENT_ID, open: !hr.completedAt };
+    if (preference === "high-roller") return [highr, spr];
+    if (preference === "spring") return [spr, highr];
+    return [spr, highr]; // 'auto' default
+  })();
+
+  for (const entry of order) {
+    if (entry.open) {
+      await grantGameboardRoll(userId, entry.id);
+      return entry.id;
+    }
   }
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Anti-cheat knobs. A quest can't earn a token until it's been on the
+// board for at least this long — kills the "create it, mark it off,
+// collect a token, repeat" trivial farming loop. Completions that
+// happen faster are still recorded in the client state but never make
+// it into the completion ledger, so no token, no combo ticks, no XP
+// toward event reward unlocks.
+//
+// Late completions (submitted after `due_at`) do land in the ledger
+// (the user still deserves credit for finishing it) but they forfeit
+// the event-token reward — deadlines have to matter for the game to
+// be a game.
+// ---------------------------------------------------------------------------
+const QUEST_MIN_AGE_MS = 10 * 60 * 1000;           // 10 minutes
+const QUEST_DEFAULT_DUE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const QUEST_MAX_DUE_MS = 365 * 24 * 60 * 60 * 1000;   // 1 year cap
+
+function parseIso(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/**
+ * Upsert a `sidequest_quest_meta` row for every quest in `nextState`
+ * that doesn't already have one. Two cases:
+ *
+ *   - Quest existed in prevState (user already had it) → grandfathered
+ *     with `created_at = now() - 11 min`, so the min-age gate doesn't
+ *     retroactively lock old quests once this feature ships.
+ *   - Quest is new in this save → `created_at = now()`. The 10-minute
+ *     cooldown starts counting from first save, not from some
+ *     client-claimed `createdAt` (which a malicious client would
+ *     happily backdate to 1970).
+ *
+ * `due_at` comes from client-provided `quest.dueAt` if it parses + is
+ * a sane future date (≤ 365d out), otherwise defaults to `now + 7d`.
+ * Rows are never mutated after insert, so a client can't extend its
+ * own deadlines to dodge the late penalty.
+ */
+async function upsertQuestMeta(
+  userId: string,
+  prevState: SideQuestState,
+  nextState: SideQuestState
+): Promise<void> {
+  const sql = getSql();
+  const now = Date.now();
+  const grandfathered = new Set<string>();
+  for (const board of prevState.boards) {
+    for (const quest of board.quests) grandfathered.add(quest.id);
+  }
+  const seen = new Set<string>();
+  for (const board of nextState.boards) {
+    for (const quest of board.quests) {
+      if (seen.has(quest.id)) continue;
+      seen.add(quest.id);
+      const claimed = parseIso(quest.dueAt);
+      let dueAtMs: number;
+      if (claimed && claimed.getTime() > now && claimed.getTime() - now <= QUEST_MAX_DUE_MS) {
+        dueAtMs = claimed.getTime();
+      } else {
+        dueAtMs = now + QUEST_DEFAULT_DUE_MS;
+      }
+      const createdAtMs = grandfathered.has(quest.id)
+        ? now - (QUEST_MIN_AGE_MS + 60 * 1000) // 11 minutes ago → eligible immediately
+        : now;
+      const createdAt = new Date(createdAtMs).toISOString();
+      const dueAt = new Date(Math.max(dueAtMs, createdAtMs + QUEST_MIN_AGE_MS)).toISOString();
+      await sql`
+        INSERT INTO sidequest_quest_meta (user_id, quest_id, created_at, due_at)
+        VALUES (${userId}, ${quest.id}, ${createdAt}::timestamptz, ${dueAt}::timestamptz)
+        ON CONFLICT (user_id, quest_id) DO NOTHING
+      `;
+    }
+  }
+}
+
+export type CompletionOutcome = "granted" | "too-fast" | "late" | "already";
+
 /**
  * Diff prev→next, find quest ids that just transitioned to completed,
- * insert each into the ledger (idempotent via PK), and grant one event
- * token per *first-time* completion (the ON CONFLICT guards against
- * a client that tries to re-submit the same completion to farm tokens).
+ * and for each one:
+ *   - Look up `sidequest_quest_meta`. If now() - created_at < 10 min,
+ *     reject the completion ('too-fast'): no ledger row, no token.
+ *   - If now() > due_at, record it in the ledger but skip the token
+ *     ('late') — credit for finishing, no reward.
+ *   - Otherwise insert into the ledger (`ON CONFLICT DO NOTHING`) and
+ *     grant one event token via the active-event preference.
  *
- * Returns the set of quest ids that were *actually* freshly inserted —
- * scrubUserRewards uses this to decide which reward-<id> entries the
- * client is allowed to add this save.
+ * Returns the set of quest ids that were *actually* recorded as fresh
+ * ledger rows (granted + late) — scrubUserRewards uses this to decide
+ * which `reward-<id>` entries the client is allowed to add this save.
  */
 async function observeCompletionsAndGrant(
   userId: string,
   prevState: SideQuestState,
   nextState: SideQuestState
-): Promise<Set<string>> {
+): Promise<{ fresh: Set<string>; rejections: Array<{ questId: string; reason: CompletionOutcome }> }> {
   const sql = getSql();
   const prevCompleted = collectCompletedQuestIds(prevState);
   const candidates: string[] = [];
@@ -1218,26 +1351,73 @@ async function observeCompletionsAndGrant(
     if (!prevCompleted.has(id)) candidates.push(id);
   }
   const fresh = new Set<string>();
+  const rejections: Array<{ questId: string; reason: CompletionOutcome }> = [];
+  if (candidates.length === 0) return { fresh, rejections };
+
   for (const questId of candidates) {
+    const metaRows = (await sql`
+      SELECT
+        created_at,
+        due_at,
+        EXTRACT(EPOCH FROM (now() - created_at))::int AS age_seconds,
+        (now() > due_at) AS is_late
+      FROM sidequest_quest_meta
+      WHERE user_id = ${userId} AND quest_id = ${questId}
+      LIMIT 1
+    `) as Array<{
+      created_at: Date | string;
+      due_at: Date | string;
+      age_seconds: number;
+      is_late: boolean;
+    }>;
+
+    if (metaRows.length === 0) {
+      // Shouldn't happen (upsertQuestMeta runs first), but if we hit it
+      // reject defensively — a completion we can't validate shouldn't
+      // pay out.
+      rejections.push({ questId, reason: "too-fast" });
+      continue;
+    }
+    const meta = metaRows[0];
+    const ageMs = meta.age_seconds * 1000;
+
+    if (ageMs < QUEST_MIN_AGE_MS) {
+      rejections.push({ questId, reason: "too-fast" });
+      continue;
+    }
+
+    const isLate = meta.is_late === true;
     const inserted = (await sql`
       INSERT INTO sidequest_quest_completions (user_id, quest_id)
       VALUES (${userId}, ${questId})
       ON CONFLICT (user_id, quest_id) DO NOTHING
       RETURNING quest_id
     `) as Array<{ quest_id: string }>;
-    if (inserted.length > 0) {
-      fresh.add(questId);
-      const grantedEvent = await grantTokenForActiveEvent(userId);
-      if (grantedEvent) {
-        await sql`
-          UPDATE sidequest_quest_completions
-          SET granted_event_id = ${grantedEvent}
-          WHERE user_id = ${userId} AND quest_id = ${questId}
-        `;
-      }
+
+    if (inserted.length === 0) {
+      rejections.push({ questId, reason: "already" });
+      continue;
+    }
+
+    fresh.add(questId);
+
+    if (isLate) {
+      // Still record which event *would* have received the token so
+      // analytics can reason about the run, but skip the actual grant.
+      rejections.push({ questId, reason: "late" });
+      continue;
+    }
+
+    const grantedEvent = await grantTokenForActiveEvent(userId);
+    if (grantedEvent) {
+      await sql`
+        UPDATE sidequest_quest_completions
+        SET granted_event_id = ${grantedEvent}
+        WHERE user_id = ${userId} AND quest_id = ${questId}
+      `;
     }
   }
-  return fresh;
+  return { fresh, rejections };
 }
 
 export type SaveBoardOptions = {
@@ -1277,8 +1457,30 @@ export async function saveSideQuestBoard(
     `) as Array<{ state: unknown }>;
     const prevState = prevRows[0] ? normalizeState(prevRows[0].state) : makeStarterState();
 
-    const freshlyCompleted = await observeCompletionsAndGrant(userId, prevState, normalized);
-    const scrubbedRewards = scrubUserRewards(prevState, normalized, freshlyCompleted);
+    // Step 1: lock in server-owned quest timestamps for any new quests.
+    // This must happen *before* completion validation so brand-new
+    // quests have their created_at stamped against "now" rather than
+    // whatever the client claims.
+    await upsertQuestMeta(userId, prevState, normalized);
+
+    // Step 2: validate each newly-completed quest against its meta.
+    // "too-fast" completions get rolled back in-place so the client's
+    // UI snaps back to incomplete on the round-trip response.
+    const { fresh, rejections } = await observeCompletionsAndGrant(userId, prevState, normalized);
+    const tooFast = new Set(rejections.filter((r) => r.reason === "too-fast").map((r) => r.questId));
+    if (tooFast.size > 0) {
+      normalized = {
+        ...normalized,
+        boards: normalized.boards.map((board) => ({
+          ...board,
+          quests: board.quests.map((q) =>
+            tooFast.has(q.id) ? { ...q, completed: false, progress: Math.min(q.progress, 95) } : q
+          )
+        }))
+      };
+    }
+
+    const scrubbedRewards = scrubUserRewards(prevState, normalized, fresh);
     normalized = { ...normalized, rewards: scrubbedRewards };
   }
 
@@ -1339,7 +1541,8 @@ export async function getSideQuestAnalytics(): Promise<AnalyticsSnapshot> {
       suspended_at,
       suspended_reason,
       suspended_by,
-      preferred_mode
+      preferred_mode,
+      active_event_preference
     FROM sidequest_users
     ORDER BY last_active_at DESC
     LIMIT 24
@@ -2221,6 +2424,53 @@ export async function adminCompleteGameboardEvent(
   });
 }
 
+/**
+ * User-initiated: let the user reset their own run so they can replay
+ * a completed event. Same effect as adminResetGameboardEvent but with
+ * self as the actor — covers the case where someone completed High
+ * Roller and wants another go without an admin in the loop.
+ */
+export async function userRestartOwnEvent(userId: string, eventId: string): Promise<void> {
+  if (eventId !== GAMEBOARD_EVENT_ID && eventId !== HIGHROLLER_EVENT_ID) {
+    throw new Error("Unknown event.");
+  }
+  const sql = getSql();
+  await ensureGameboardRun(userId, eventId);
+  await sql`
+    UPDATE sidequest_gameboard_runs
+    SET position = 0,
+        rolls_earned = 0,
+        rolls_used = 0,
+        laps = 0,
+        peak_position = 0,
+        completed_at = NULL,
+        updated_at = now()
+    WHERE user_id = ${userId} AND event_id = ${eventId}
+  `;
+  await writeAudit(userId, userId, "self-restart-event", { eventId });
+}
+
+/**
+ * User-initiated: set which event new quest-completion tokens route to.
+ * 'auto' falls back to Spring-then-High-Roller. 'spring' / 'high-roller'
+ * pin the named event with fall-through when it's already completed.
+ */
+export async function userSetActiveEventPreference(
+  userId: string,
+  preference: ActiveEventPreference
+): Promise<ActiveEventPreference> {
+  const normalized = normalizeEventPreference(preference);
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_users
+    SET active_event_preference = ${normalized}
+    WHERE id = ${userId}
+  `;
+  await writeAudit(userId, userId, "set-active-event-preference", { preference: normalized });
+  return normalized;
+}
+
 export async function adminResetGameboardEvent(
   adminId: string,
   userId: string,
@@ -2251,7 +2501,7 @@ export async function getSpectatorSnapshot(targetUserId: string) {
     SELECT
       id, name, email, username, role, age_range, school_year, favorite_category,
       board_role, quests_created, quests_completed, joined_at, last_active_at,
-      suspended_at, suspended_reason, suspended_by, preferred_mode
+      suspended_at, suspended_reason, suspended_by, preferred_mode, active_event_preference
     FROM sidequest_users WHERE id = ${targetUserId} LIMIT 1
   `) as UserRow[];
   if (userRows.length === 0) throw new Error("User not found.");

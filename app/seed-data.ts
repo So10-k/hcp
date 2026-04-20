@@ -5,6 +5,18 @@ export type Quest = {
   title: string;
   category: Category;
   dueLabel: string;
+  /**
+   * ISO-8601 due datetime. Enforced server-side: late completions still
+   * land in the ledger but forfeit the event-token reward. Optional on
+   * the type for back-compat with pre-deadline quests, but the client
+   * now requires users to pick one when creating new quests.
+   */
+  dueAt?: string;
+  /**
+   * ISO-8601 created-at. Server-owned via `sidequest_quest_meta` —
+   * whatever the client sends here is informational only.
+   */
+  createdAt?: string;
   xp: number;
   progress: number;
   completed: boolean;
