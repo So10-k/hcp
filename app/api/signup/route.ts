@@ -11,12 +11,14 @@ export async function POST(request: Request) {
 
   try {
     const favoriteCategory = String(formData.get("favoriteCategory") ?? "school") as Category;
+    const wantsProMode = formData.get("preferredMode") === "pro";
     const user = await signUpSideQuestUser({
       name: String(formData.get("name") ?? ""),
       email: String(formData.get("email") ?? ""),
       username: String(formData.get("username") ?? ""),
       password: String(formData.get("password") ?? ""),
-      favoriteCategory: categoryOptions.includes(favoriteCategory) ? favoriteCategory : "school"
+      favoriteCategory: categoryOptions.includes(favoriteCategory) ? favoriteCategory : "school",
+      preferredMode: wantsProMode ? "pro" : "playful"
     });
 
     await setSessionCookie(user.id);

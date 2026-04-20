@@ -40,6 +40,7 @@ import {
   todayKey,
   type SpinPrize
 } from "./daily-spin-config";
+import { isPreferredMode, normalizeMode, type PreferredMode } from "./preferred-mode";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -93,6 +94,7 @@ export type AuthUser = {
   favoriteCategory: Category;
   suspendedAt: string | null;
   suspendedReason: string | null;
+  preferredMode: PreferredMode;
 };
 
 export type SignUpInput = {
@@ -101,6 +103,7 @@ export type SignUpInput = {
   username: string;
   password: string;
   favoriteCategory: Category;
+  preferredMode?: PreferredMode;
 };
 
 export type LoginInput = {
@@ -126,6 +129,7 @@ type UserRow = {
   suspended_at?: Date | string | null;
   suspended_reason?: string | null;
   suspended_by?: string | null;
+  preferred_mode?: string | null;
 };
 
 export function getSql() {
@@ -311,6 +315,10 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
     await sql`
       ALTER TABLE sidequest_users
         ADD COLUMN IF NOT EXISTS total_combos integer NOT NULL DEFAULT 0
+    `;
+    await sql`
+      ALTER TABLE sidequest_users
+        ADD COLUMN IF NOT EXISTS preferred_mode text NOT NULL DEFAULT 'playful'
     `;
   })();
 
@@ -694,7 +702,8 @@ function toAuthUser(row: UserRow): AuthUser {
     role: row.role === "admin" ? "admin" : "member",
     favoriteCategory,
     suspendedAt: row.suspended_at ? new Date(row.suspended_at).toISOString() : null,
-    suspendedReason: row.suspended_reason ?? null
+    suspendedReason: row.suspended_reason ?? null,
+    preferredMode: normalizeMode(row.preferred_mode)
   };
 }
 
@@ -795,6 +804,7 @@ export async function signUpSideQuestUser(input: SignUpInput) {
         school_year,
         favorite_category,
         board_role,
+        preferred_mode,
         joined_at,
         last_active_at
       )
@@ -809,6 +819,7 @@ export async function signUpSideQuestUser(input: SignUpInput) {
         'student',
         ${safeCategory},
         'quester',
+        ${normalizeMode(input.preferredMode)},
         now(),
         now()
       )
@@ -825,7 +836,8 @@ export async function signUpSideQuestUser(input: SignUpInput) {
         quests_created,
         quests_completed,
         joined_at,
-        last_active_at
+        last_active_at,
+        preferred_mode
     `) as UserRow[];
   } catch (error) {
     // Translate raw unique-constraint errors from the DB into friendly copy
@@ -872,7 +884,8 @@ export async function loginSideQuestUser(input: LoginInput) {
       last_active_at,
       suspended_at,
       suspended_reason,
-      suspended_by
+      suspended_by,
+      preferred_mode
     FROM sidequest_users
     WHERE lower(email) = ${usernameOrEmail}
       OR lower(username) = ${usernameOrEmail}
@@ -938,7 +951,8 @@ export async function getUserBySessionToken(token: string | undefined) {
       users.last_active_at,
       users.suspended_at,
       users.suspended_reason,
-      users.suspended_by
+      users.suspended_by,
+      users.preferred_mode
     FROM sidequest_sessions sessions
     INNER JOIN sidequest_users users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ${hashToken(token)}
@@ -1060,7 +1074,8 @@ export async function getSideQuestAnalytics(): Promise<AnalyticsSnapshot> {
       last_active_at,
       suspended_at,
       suspended_reason,
-      suspended_by
+      suspended_by,
+      preferred_mode
     FROM sidequest_users
     ORDER BY last_active_at DESC
     LIMIT 24
@@ -1668,6 +1683,7 @@ export type AdminUserSummary = {
   peakCombo: number;
   totalCombos: number;
   spunToday: boolean;
+  preferredMode: PreferredMode;
 };
 
 export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
@@ -1695,7 +1711,8 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
       (hr.completed_at IS NOT NULL) AS high_roller_completed,
       COALESCE(u.peak_combo, 0) AS peak_combo,
       COALESCE(u.total_combos, 0) AS total_combos,
-      (ds.user_id IS NOT NULL) AS spun_today
+      (ds.user_id IS NOT NULL) AS spun_today,
+      COALESCE(u.preferred_mode, 'playful') AS preferred_mode
     FROM sidequest_users u
     LEFT JOIN sidequest_boards b ON b.id = CONCAT('user:', u.id)
     LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = ${GAMEBOARD_EVENT_ID}
@@ -1725,6 +1742,7 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     peak_combo: number;
     total_combos: number;
     spun_today: boolean;
+    preferred_mode: string;
   }>;
   return rows.map((row) => ({
     id: row.id,
@@ -1747,7 +1765,8 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     highRollerCompleted: row.high_roller_completed,
     peakCombo: row.peak_combo,
     totalCombos: row.total_combos,
-    spunToday: row.spun_today
+    spunToday: row.spun_today,
+    preferredMode: normalizeMode(row.preferred_mode)
   }));
 }
 
@@ -1968,7 +1987,7 @@ export async function getSpectatorSnapshot(targetUserId: string) {
     SELECT
       id, name, email, username, role, age_range, school_year, favorite_category,
       board_role, quests_created, quests_completed, joined_at, last_active_at,
-      suspended_at, suspended_reason, suspended_by
+      suspended_at, suspended_reason, suspended_by, preferred_mode
     FROM sidequest_users WHERE id = ${targetUserId} LIMIT 1
   `) as UserRow[];
   if (userRows.length === 0) throw new Error("User not found.");
@@ -2381,4 +2400,36 @@ export async function adminResetCombo(adminId: string, userId: string): Promise<
     WHERE id = ${userId}
   `;
   await writeAudit(adminId, userId, "reset-combo", null);
+}
+
+// ===========================================================================
+// Preferred-mode toggle (playful ↔ pro). Defaults to 'playful' on signup.
+// ===========================================================================
+
+export async function adminSetPreferredMode(
+  adminId: string,
+  userId: string,
+  mode: PreferredMode
+): Promise<void> {
+  if (!isPreferredMode(mode)) {
+    throw new Error("Unknown mode.");
+  }
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    UPDATE sidequest_users
+    SET preferred_mode = ${mode}
+    WHERE id = ${userId}
+  `;
+  await writeAudit(adminId, userId, "set-preferred-mode", { mode });
+  await createNotification(userId, {
+    kind: "custom",
+    title: mode === "pro" ? "Pro mode enabled" : "Playful mode enabled",
+    body:
+      mode === "pro"
+        ? "An admin switched your interface to a calmer, less cluttered look."
+        : "An admin switched your interface back to the playful look.",
+    payload: { mode },
+    awardedBy: adminId
+  });
 }

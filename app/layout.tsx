@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { ModeProvider } from "./components/mode-provider";
+import { getCurrentUser } from "./lib/auth";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -47,14 +49,20 @@ export const viewport: Viewport = {
   themeColor: "#ffd43d"
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Read the signed-in user (if any) so we can drive the mode-aware UI.
+  // getCurrentUser is non-redirecting; anon users default to the playful look.
+  const user = await getCurrentUser().catch(() => null);
+  const mode = user?.preferredMode ?? "playful";
   return (
-    <html lang="en" data-scroll-behavior="smooth">
-      <body>{children}</body>
+    <html lang="en" data-scroll-behavior="smooth" data-mode={mode}>
+      <body>
+        <ModeProvider mode={mode}>{children}</ModeProvider>
+      </body>
     </html>
   );
 }

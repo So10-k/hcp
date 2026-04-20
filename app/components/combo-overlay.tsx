@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { t } from "../lib/preferred-mode";
+import { useMode } from "./mode-provider";
 
 const COMBO_WINDOW_MS = 90_000;
 
@@ -24,14 +26,15 @@ type ComboState = {
   lastAt: number;
 };
 
-function tier(count: number) {
-  if (count >= 8) return { label: "BLAZING", multiplier: "×3", color: "var(--red)", glow: "0 0 60px rgba(255,90,61,0.65)" };
-  if (count >= 5) return { label: "ON FIRE", multiplier: "×2", color: "var(--yellow)", glow: "0 0 48px rgba(255,212,61,0.65)" };
-  if (count >= 2) return { label: "COMBO", multiplier: "×1.5", color: "var(--mint)", glow: "0 0 36px rgba(68,215,168,0.55)" };
+function tier(count: number, mode: "playful" | "pro") {
+  if (count >= 8) return { label: t("comboTier8", mode), multiplier: "×3", color: "var(--red)", glow: "0 0 60px rgba(255,90,61,0.65)" };
+  if (count >= 5) return { label: t("comboTier5", mode), multiplier: "×2", color: "var(--yellow)", glow: "0 0 48px rgba(255,212,61,0.65)" };
+  if (count >= 2) return { label: t("comboTier2", mode), multiplier: "×1.5", color: "var(--mint)", glow: "0 0 36px rgba(68,215,168,0.55)" };
   return null;
 }
 
 export function ComboOverlay({ pulse, resetSignal = 0 }: Props) {
+  const mode = useMode();
   const [state, setState] = useState<ComboState>({ count: 0, flash: 0, lastAt: 0 });
   const timerRef = useRef<number | null>(null);
   const lastReportedRef = useRef(0);
@@ -87,7 +90,7 @@ export function ComboOverlay({ pulse, resetSignal = 0 }: Props) {
 
   if (state.count < 2) return null;
 
-  const t = tier(state.count)!;
+  const tierInfo = tier(state.count, mode)!;
   return (
     <div
       key={state.flash}
@@ -96,15 +99,15 @@ export function ComboOverlay({ pulse, resetSignal = 0 }: Props) {
       aria-live="polite"
       style={
         {
-          "--combo-color": t.color,
-          "--combo-glow": t.glow
+          "--combo-color": tierInfo.color,
+          "--combo-glow": tierInfo.glow
         } as React.CSSProperties
       }
     >
       <div className="combo-card">
-        <span className="combo-kicker">{t.label}</span>
+        <span className="combo-kicker">{tierInfo.label}</span>
         <span className="combo-count">{state.count}×</span>
-        <span className="combo-mult">{t.multiplier} XP</span>
+        <span className="combo-mult">{tierInfo.multiplier} XP</span>
       </div>
       <ComboTimerBar key={`${state.flash}-bar`} ms={COMBO_WINDOW_MS} />
     </div>

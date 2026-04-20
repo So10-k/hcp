@@ -7,6 +7,7 @@ import { NotificationBell } from "../components/notification-bell";
 import { requireUser } from "../lib/auth";
 import { GAMEBOARD_LENGTH } from "../lib/gameboard-config";
 import { HIGHROLLER_EVENT_ID } from "../lib/highroller-config";
+import { t } from "../lib/preferred-mode";
 import { getDailySpinStatus, getGameboardRun, getSideQuestAnalytics } from "../lib/sidequest-db";
 
 export const dynamic = "force-dynamic";
@@ -64,17 +65,15 @@ export default async function DashboardPage() {
 
       <section className="personal-hero" aria-labelledby="personal-title">
         <div>
-          <p className="eyebrow">Your personal dashboard</p>
-          <h1 id="personal-title">Welcome back, {user.name}.</h1>
-          <p>
-            Check your week, jump into your board, or peek at admin analytics if your account has access.
-          </p>
+          <p className="eyebrow">{t("dashboardEyebrow", user.preferredMode)}</p>
+          <h1 id="personal-title">{t("dashboardWelcome", user.preferredMode)} {user.name}.</h1>
+          <p>{t("dashboardLede", user.preferredMode)}</p>
           <div className="hero-actions">
             <Link className="primary-button" href="/board">
-              Open my board
+              {t("dashboardCtaPrimary", user.preferredMode)}
             </Link>
             <Link className="secondary-button" href="/achievements">
-              Hall of achievements
+              {t("dashboardCtaHall", user.preferredMode)}
             </Link>
             {user.role === "admin" ? (
               <Link className="secondary-button" href="/admin">

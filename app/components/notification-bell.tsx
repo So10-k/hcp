@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMode } from "./mode-provider";
 
 type Notification = {
   id: number;
@@ -76,6 +77,8 @@ function timeAgo(iso: string) {
 }
 
 export function NotificationBell() {
+  const mode = useMode();
+  const isPro = mode === "pro";
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -243,21 +246,21 @@ export function NotificationBell() {
                 {toast.kind === "award-dice"
                   ? "Bonus rolls"
                   : toast.kind === "award-flip-tokens"
-                    ? "Flip tokens"
+                    ? (isPro ? "Bonus tokens" : "Flip tokens")
                     : toast.kind === "award-badge"
-                      ? "Badge dropped"
+                      ? (isPro ? "Recognition granted" : "Badge dropped")
                       : toast.kind === "award-sticker"
-                        ? "Sticker dropped"
+                        ? (isPro ? "Achievement granted" : "Sticker dropped")
                         : toast.kind === "high-roller-completed"
-                          ? "Tower cleared"
+                          ? (isPro ? "Bonus event complete" : "Tower cleared")
                           : toast.kind === "high-roller-bust"
-                            ? "Bust"
+                            ? (isPro ? "Reset" : "Bust")
                             : toast.kind === "event-fast-forwarded"
                               ? "Event jumped"
                               : toast.kind === "daily-spin-won"
-                                ? "Daily spin"
+                                ? (isPro ? "Daily reward" : "Daily spin")
                                 : toast.kind === "combo-milestone"
-                                  ? "Combo unlocked"
+                                  ? (isPro ? "Streak milestone" : "Combo unlocked")
                                   : toast.kind === "account-suspended"
                                     ? "Account paused"
                                     : toast.kind === "account-unsuspended"

@@ -7812,3 +7812,232 @@ body {
     padding: 0.4rem 0.5rem;
   }
 }
+
+/* =========================================================
+   Pro mode (data-mode="pro") — calmer, less cluttered.
+   - Disable decorative animations (bell shake, bulb chase,
+     pulses, bobs, sticker tilts).
+   - Flatten rotations to 0 so cards don't dance around.
+   - Tone down offset shadows and border weights.
+   - Mute saturated gradients (use solid neutrals).
+   - Hide purely-decorative elements (rim bulbs, sticker
+     sparkles in event headers, gradient stripe banners).
+   - Tighten typography: less uppercase shouting, lighter
+     weights on body text, smaller text-shadows.
+   The color palette is unchanged — playful and pro share
+   the same hex codes; pro just turns down the volume.
+   ========================================================= */
+[data-mode="pro"] {
+  /* Slightly less aggressive default shadow */
+  --shadow: 3px 3px 0 var(--ink);
+}
+
+/* Kill decorative animations */
+[data-mode="pro"] .notif-bell.has-unread { animation: none; }
+[data-mode="pro"] .spin-pill.is-ready { animation: none; }
+[data-mode="pro"] .spin-banner-icon { animation: none; }
+[data-mode="pro"] .spin-bulb { animation: none; box-shadow: inset -1px -1px 0 rgba(23,21,18,0.18); }
+[data-mode="pro"] .lte-banner-bar-fill,
+[data-mode="pro"] .hr-banner-bar-fill { transition: none; }
+[data-mode="pro"] .gb-tile.is-start { animation: none; }
+[data-mode="pro"] .hr-pawn { animation: none; }
+[data-mode="pro"] .hr-coin.is-flipping,
+[data-mode="pro"] .gb-die-cube.is-rolling { animation: none; }
+[data-mode="pro"] .notif-toast-burst { animation: none; opacity: 0.55; }
+[data-mode="pro"] .notif-toast-overlay { animation-name: none; transform: none; }
+[data-mode="pro"] .tutorial-dot { animation: none; }
+[data-mode="pro"] .combo-overlay { animation: none; }
+[data-mode="pro"] .combo-card { box-shadow: 4px 4px 0 var(--ink); /* drop the colored glow */ }
+
+/* Flatten all the playful rotations */
+[data-mode="pro"] .sticker-slot,
+[data-mode="pro"] .sticker-slot.is-unlocked,
+[data-mode="pro"] .sticker-slot.is-unlocked:nth-child(even),
+[data-mode="pro"] .trophy-frame,
+[data-mode="pro"] .trophy-frame:nth-child(2n),
+[data-mode="pro"] .trophy-frame:nth-child(3n),
+[data-mode="pro"] .gb-masthead,
+[data-mode="pro"] .ds-mast,
+[data-mode="pro"] .hr-badge-card,
+[data-mode="pro"] .badge-card,
+[data-mode="pro"] .not-found-scene,
+[data-mode="pro"] .gb-badge-card { transform: none !important; }
+
+/* Drop emoji from spin pill / banner — keep just text + a star */
+[data-mode="pro"] .spin-banner {
+  background: var(--surface);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+[data-mode="pro"] .spin-banner.is-claimed { filter: none; opacity: 0.85; }
+[data-mode="pro"] .spin-banner-icon {
+  background: var(--ink);
+  color: var(--yellow);
+  width: 42px;
+  height: 42px;
+  font-size: 1.1rem;
+}
+
+/* Quieter banners — replace candy gradients with single hue + ink trim */
+[data-mode="pro"] .lte-banner {
+  background: var(--surface);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+[data-mode="pro"] .hr-banner {
+  background: var(--surface);
+  border-color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+[data-mode="pro"] .lte-banner-cta,
+[data-mode="pro"] .hr-banner-cta {
+  background: var(--ink);
+  color: var(--yellow);
+}
+
+/* Reduce neobrutalist offset shadows on the most visible chrome */
+[data-mode="pro"] .topbar,
+[data-mode="pro"] .admin-topbar,
+[data-mode="pro"] .personal-card,
+[data-mode="pro"] .info-panel,
+[data-mode="pro"] .quest-card,
+[data-mode="pro"] .reward-panel,
+[data-mode="pro"] .reward-panel-link,
+[data-mode="pro"] .gb-board-card,
+[data-mode="pro"] .gb-panel,
+[data-mode="pro"] .hr-tower-card,
+[data-mode="pro"] .hr-panel,
+[data-mode="pro"] .spectate-card,
+[data-mode="pro"] .admin-panel,
+[data-mode="pro"] .sticker-book-spread,
+[data-mode="pro"] .trophy-frame,
+[data-mode="pro"] .hall-hero img {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+[data-mode="pro"] .gb-masthead,
+[data-mode="pro"] .hr-masthead,
+[data-mode="pro"] .hall-hero {
+  box-shadow: 4px 4px 0 var(--ink);
+}
+[data-mode="pro"] .gb-masthead {
+  background: var(--surface);
+}
+[data-mode="pro"] .gb-masthead::before { display: none; }
+
+/* Hall + sticker book — subdue */
+[data-mode="pro"] .hall-hero img { transform: none; }
+[data-mode="pro"] .sticker-book-spine { background: var(--paper-deep); }
+[data-mode="pro"] .sticker-book-spine span { display: none; }
+
+/* Drop the rim chase lights on the spin wheel — keep wheel but with
+   a clean ink rim instead of the carnival bulbs */
+[data-mode="pro"] .spin-wheel-rim {
+  background: radial-gradient(circle at center, transparent 64%, var(--paper-deep) 64% 92%, transparent 92%);
+}
+[data-mode="pro"] .spin-bulb { display: none; }
+[data-mode="pro"] .spin-wheel-shine { mix-blend-mode: normal; opacity: 0.35; }
+[data-mode="pro"] .spin-hub-text { display: none; }
+
+/* Spring Sprint board: drop the spotlight glow on start tile,
+   use a quiet header */
+[data-mode="pro"] .gb-tile.is-start {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+[data-mode="pro"] .gb-tile.is-start::before,
+[data-mode="pro"] .gb-tile.is-start::after { display: none; }
+
+/* Buttons — flatten */
+[data-mode="pro"] .primary-button,
+[data-mode="pro"] .secondary-button,
+[data-mode="pro"] .ghost-button,
+[data-mode="pro"] .gb-roll-button,
+[data-mode="pro"] .hr-flip-button,
+[data-mode="pro"] .spin-go,
+[data-mode="pro"] .roll-button,
+[data-mode="pro"] .menu__play {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+[data-mode="pro"] .primary-button { background: var(--ink); color: var(--yellow); }
+[data-mode="pro"] .secondary-button { background: var(--white); }
+
+/* Headlines — drop double drop-shadows so big titles don't shout */
+[data-mode="pro"] h1,
+[data-mode="pro"] .gb-masthead h1,
+[data-mode="pro"] .hr-masthead h1,
+[data-mode="pro"] .hall-hero h1,
+[data-mode="pro"] .not-found-title,
+[data-mode="pro"] .menu h1,
+[data-mode="pro"] .editor-panel__header strong { text-shadow: none; }
+
+/* Confetti, big bouncy button presses */
+[data-mode="pro"] .confetti-layer { display: none; }
+[data-mode="pro"] .confetti-toast { box-shadow: 3px 3px 0 var(--ink); }
+
+/* Combo overlay — drop the giant outlined number, keep a quiet pill */
+[data-mode="pro"] .combo-count {
+  font-size: 2rem;
+  -webkit-text-stroke: 0;
+}
+[data-mode="pro"] .combo-card { padding: 0.55rem 0.85rem; }
+[data-mode="pro"] .combo-kicker { letter-spacing: 0.1em; }
+
+/* Notification toast — drop the rotate/bounce entry */
+[data-mode="pro"] .notif-toast-overlay {
+  animation-duration: 0.001ms !important;
+}
+
+/* Sticker book — quieter slot framing */
+[data-mode="pro"] .sticker-slot.is-unlocked {
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* Auth signup page checkbox style */
+.auth-checkbox {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 3px solid var(--ink);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 0.88rem;
+  font-weight: 800;
+  line-height: 1.3;
+  cursor: pointer;
+  align-items: start;
+}
+.auth-checkbox input[type="checkbox"] {
+  margin-top: 0.15rem;
+  width: 22px;
+  height: 22px;
+  accent-color: var(--ink);
+}
+.auth-checkbox strong { display: inline; }
+
+/* Admin mode pill in the user table */
+.admin-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  padding: 0.25rem 0.55rem;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: 2px 2px 0 var(--ink);
+  font: inherit;
+  font-weight: 900;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.admin-mode-pill.admin-mode-pro { background: var(--sky); }
+.admin-mode-pill.admin-mode-playful { background: var(--yellow); }
+.admin-mode-pill:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}

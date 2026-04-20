@@ -62,6 +62,18 @@ export default async function SignupPage({ searchParams }: AuthPageProps) {
               <option value="life admin">Life admin</option>
             </select>
           </label>
+          <label className="auth-checkbox">
+            <input
+              type="checkbox"
+              name="preferredMode"
+              value="pro"
+            />
+            <span>
+              <strong>Pro mode.</strong> Prefer a calmer, less cartoon-y interface
+              — fewer animations, muted decoration, grown-up vocabulary. You can
+              switch back any time.
+            </span>
+          </label>
           <button type="submit" className="primary-button">
             Create account
           </button>

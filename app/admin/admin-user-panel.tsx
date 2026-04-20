@@ -26,6 +26,7 @@ type AdminUserSummary = {
   peakCombo: number;
   totalCombos: number;
   spunToday: boolean;
+  preferredMode: "playful" | "pro";
 };
 
 type EventId = "spring-sprint" | "high-roller";
@@ -129,6 +130,15 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
   const quickResetCombo = (user: AdminUserSummary) =>
     runAction({ action: "reset-combo", userId: user.id }, user, "Combo reset");
 
+  const togglePreferredMode = (user: AdminUserSummary) => {
+    const next = user.preferredMode === "pro" ? "playful" : "pro";
+    return runAction(
+      { action: "set-preferred-mode", userId: user.id, mode: next },
+      user,
+      next === "pro" ? "Pro mode on" : "Playful mode on"
+    );
+  };
+
   return (
     <section className="admin-panel admin-user-panel" aria-labelledby="admin-users-title">
       <div className="panel-heading">
@@ -191,6 +201,16 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                       Joined {new Date(user.joinedAt).toLocaleDateString()} · last active{" "}
                       {new Date(user.lastActiveAt).toLocaleDateString()}
                     </span>
+                    <button
+                      type="button"
+                      className={`admin-mode-pill admin-mode-${user.preferredMode}`}
+                      onClick={() => void togglePreferredMode(user)}
+                      title={user.preferredMode === "pro"
+                        ? "Currently Pro mode — click to switch to Playful"
+                        : "Currently Playful mode — click to switch to Pro"}
+                    >
+                      {user.preferredMode === "pro" ? "Pro mode" : "Playful mode"} · ↻
+                    </button>
                   </td>
                   <td>
                     <span className={`admin-role-pill admin-role-${user.role}`}>{user.role}</span>

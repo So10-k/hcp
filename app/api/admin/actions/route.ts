@@ -13,9 +13,11 @@ import {
   adminResetCombo,
   adminResetDailySpin,
   adminResetGameboardEvent,
+  adminSetPreferredMode,
   adminSuspendUser,
   adminUnsuspendUser
 } from "../../../lib/sidequest-db";
+import { isPreferredMode } from "../../../lib/preferred-mode";
 
 export const runtime = "nodejs";
 
@@ -39,7 +41,8 @@ type ActionBody =
   | { action: "award-event-tokens"; userId: string; eventId: string; count: number }
   | { action: "force-daily-spin"; userId: string }
   | { action: "reset-daily-spin"; userId: string }
-  | { action: "reset-combo"; userId: string };
+  | { action: "reset-combo"; userId: string }
+  | { action: "set-preferred-mode"; userId: string; mode: "playful" | "pro" };
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -108,6 +111,13 @@ export async function POST(request: Request) {
       }
       case "reset-combo": {
         await adminResetCombo(admin.id, body.userId);
+        return NextResponse.json({ ok: true });
+      }
+      case "set-preferred-mode": {
+        if (!isPreferredMode(body.mode)) {
+          return NextResponse.json({ error: "Unknown mode." }, { status: 400 });
+        }
+        await adminSetPreferredMode(admin.id, body.userId, body.mode);
         return NextResponse.json({ ok: true });
       }
       default:
