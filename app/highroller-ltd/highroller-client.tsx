@@ -84,6 +84,7 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
   const coinRef = useRef<HTMLDivElement | null>(null);
 
   const [verify, setVerify] = useState<"idle" | "verified" | "mismatch" | "unsupported">("idle");
+  const [fairnessTutorialOpen, setFairnessTutorialOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -251,7 +252,17 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
           </section>
 
           <section className="hr-panel hr-fairness" aria-labelledby="hr-fair-title">
-            <h3 id="hr-fair-title">Provably fair · next flip sealed</h3>
+            <div className="hr-fair-head">
+              <h3 id="hr-fair-title">Provably fair · next flip sealed</h3>
+              <button
+                type="button"
+                className="hr-fair-explain-btn"
+                onClick={() => setFairnessTutorialOpen(true)}
+                aria-label="Watch the 20-second fairness explainer"
+              >
+                ▶ How this works
+              </button>
+            </div>
             <p className="hr-fair-explain">
               The server picked the next outcome before you saw this page and published the SHA-256 of it below.
               After you flip, it reveals the value + nonce so you can verify nothing was swapped.
@@ -363,6 +374,15 @@ export default function HighRollerClient({ initialRun, rungCount, playerLabel }:
         open={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
         src="/sidequest-highroller-tutorial.mp4"
+      />
+
+      {/* Opt-in: only plays when the user clicks "How this works" on the
+          fairness panel. 600 frames = 20s at 30fps; syncTail stays at the
+          default 1.2s to match the composition's outro radial collapse. */}
+      <TutorialPlayer
+        open={fairnessTutorialOpen}
+        onClose={() => setFairnessTutorialOpen(false)}
+        src="/sidequest-fairness.mp4"
       />
     </>
   );

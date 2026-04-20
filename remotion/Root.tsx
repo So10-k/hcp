@@ -1,5 +1,6 @@
 import { Composition } from "remotion";
 import { SideQuestAdReel } from "./SideQuestAdReel";
+import { SideQuestFairnessReel } from "./SideQuestFairnessReel";
 import { SideQuestFeatureReel } from "./SideQuestFeatureReel";
 import { SideQuestBoardTutorialReel } from "./SideQuestBoardTutorialReel";
 import { SideQuestHighRollerTutorialReel } from "./SideQuestHighRollerTutorialReel";
@@ -56,6 +57,14 @@ export function RemotionRoot() {
         id="sidequest-highroller-tutorial"
         component={SideQuestHighRollerTutorialReel}
         durationInFrames={750}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+      <Composition
+        id="sidequest-fairness"
+        component={SideQuestFairnessReel}
+        durationInFrames={600}
         fps={30}
         width={1920}
         height={1080}

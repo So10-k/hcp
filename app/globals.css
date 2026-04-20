@@ -8132,6 +8132,33 @@ body {
    High Roller provably-fair panel — sealed hash + reveal + verify chip.
    ========================================================================= */
 .hr-fairness { background: #fffaf0; }
+.hr-fair-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+.hr-fair-head h3 { margin: 0; }
+.hr-fair-explain-btn {
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  min-height: 36px;
+}
+.hr-fair-explain-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
 .hr-fair-explain {
   font-size: 0.82rem;
   line-height: 1.45;
