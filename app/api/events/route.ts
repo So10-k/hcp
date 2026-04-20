@@ -19,6 +19,12 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in first." }, { status: 401 });
     }
+    // Event-routing + replay controls are admin-only — they bypass the
+    // normal event progression, so we don't want regular users resetting
+    // their own runs or redirecting token grants.
+    if (user.role !== "admin") {
+      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    }
     await enforceRateLimit(user.id, "events-user", 20);
     const body = (await request.json().catch(() => ({}))) as Partial<PostBody>;
 

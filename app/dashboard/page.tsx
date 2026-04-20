@@ -64,11 +64,13 @@ export default async function DashboardPage() {
         />
       ) : null}
 
-      <EventControls
-        initialPreference={user.activeEventPreference}
-        springCompleted={!!springRun.completedAt}
-        highRollerCompleted={!!highRollerRun.completedAt}
-      />
+      {user.role === "admin" ? (
+        <EventControls
+          initialPreference={user.activeEventPreference}
+          springCompleted={!!springRun.completedAt}
+          highRollerCompleted={!!highRollerRun.completedAt}
+        />
+      ) : null}
 
       <section className="personal-hero" aria-labelledby="personal-title">
         <div>
