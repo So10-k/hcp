@@ -8,14 +8,20 @@ import {
   adminAwardDice,
   adminAwardEventTokens,
   adminAwardSticker,
+  adminBroadcastNotification,
   adminCompleteGameboardEvent,
   adminForceDailySpin,
+  adminForceLogout,
+  adminGrantTempRole,
   adminResetCombo,
   adminResetDailySpin,
   adminResetGameboardEvent,
+  adminRevokeRole,
   adminSetPreferredMode,
   adminSuspendUser,
-  adminUnsuspendUser
+  adminUnsuspendUser,
+  addAdminNote,
+  getAdminNotes
 } from "../../../lib/sidequest-db";
 import { isPreferredMode } from "../../../lib/preferred-mode";
 
@@ -42,7 +48,13 @@ type ActionBody =
   | { action: "force-daily-spin"; userId: string }
   | { action: "reset-daily-spin"; userId: string }
   | { action: "reset-combo"; userId: string }
-  | { action: "set-preferred-mode"; userId: string; mode: "playful" | "pro" };
+  | { action: "set-preferred-mode"; userId: string; mode: "playful" | "pro" }
+  | { action: "force-logout"; userId: string }
+  | { action: "grant-temp-role"; userId: string; durationHours: number }
+  | { action: "revoke-role"; userId: string }
+  | { action: "broadcast"; title: string; body: string }
+  | { action: "add-note"; userId: string; note: string }
+  | { action: "get-notes"; userId: string };
 
 export async function POST(request: Request) {
   const admin = await requireAdmin();
@@ -119,6 +131,28 @@ export async function POST(request: Request) {
         }
         await adminSetPreferredMode(admin.id, body.userId, body.mode);
         return NextResponse.json({ ok: true });
+      }
+      case "force-logout":
+        await adminForceLogout(admin.id, body.userId);
+        return NextResponse.json({ ok: true });
+      case "grant-temp-role": {
+        const hours = Math.min(Math.max(Number(body.durationHours) || 1, 1), 72);
+        await adminGrantTempRole(admin.id, body.userId, hours);
+        return NextResponse.json({ ok: true });
+      }
+      case "revoke-role":
+        await adminRevokeRole(admin.id, body.userId);
+        return NextResponse.json({ ok: true });
+      case "broadcast": {
+        const result = await adminBroadcastNotification(admin.id, body.title, body.body);
+        return NextResponse.json({ ok: true, sentTo: result.sentTo });
+      }
+      case "add-note":
+        await addAdminNote(admin.id, body.userId, body.note);
+        return NextResponse.json({ ok: true });
+      case "get-notes": {
+        const notes = await getAdminNotes(body.userId);
+        return NextResponse.json({ ok: true, notes });
       }
       default:
         return NextResponse.json({ error: "Unknown action." }, { status: 400 });

@@ -1395,7 +1395,7 @@ function SceneCta() {
             transform: `scale(${urlT})`
           }}
         >
-          sidequest.app / gameboard-ltd
+          sidequester.us / gameboard-ltd
         </div>
 
         {/* Date range */}

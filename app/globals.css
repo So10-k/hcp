@@ -8221,3 +8221,188 @@ body {
 .hr-fair-mismatch { background: var(--red); color: #fff; }
 .hr-fair-unsupported { background: #eadbb9; }
 .hr-fair-idle { background: #fff; opacity: 0.7; }
+
+/* ======================================================================
+   Maintenance page
+   ====================================================================== */
+.maintenance-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+  padding: 2rem;
+}
+.maintenance-card {
+  max-width: 520px;
+  width: 100%;
+  background: var(--yellow);
+  border: 4px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--ink);
+  border-radius: 12px;
+  padding: 2.5rem 2.5rem 2rem;
+  text-align: center;
+}
+.maintenance-card h1 {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0.5rem 0 1rem;
+}
+.maintenance-message {
+  font-size: 1.05rem;
+  font-weight: 700;
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  padding: 0.85rem 1.1rem;
+  margin: 0 0 0.75rem;
+}
+.maintenance-sub {
+  font-size: 0.85rem;
+  color: #5a5043;
+  margin: 0;
+}
+
+/* ======================================================================
+   Admin role temp badge
+   ====================================================================== */
+.admin-role-temp {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ======================================================================
+   Site Controls panel
+   ====================================================================== */
+.site-controls {
+  margin-bottom: 2rem;
+}
+.site-controls-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+@media (max-width: 720px) {
+  .site-controls-body { grid-template-columns: 1fr; }
+}
+.site-controls-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.site-controls-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.site-controls-section-head > div {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.site-controls-section-head strong {
+  font-size: 1rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.site-controls-section-head p {
+  font-size: 0.82rem;
+  color: #5a5043;
+  margin: 0;
+}
+.site-controls-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.site-controls-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.site-controls-label input,
+.site-controls-label textarea {
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 0.5rem 0.65rem;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  border-radius: 6px;
+  font-family: inherit;
+}
+.site-controls-textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+}
+.site-controls-save {
+  align-self: flex-start;
+  padding: 0.45rem 0.9rem;
+  border: 3px solid var(--ink);
+  background: #fff;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 100ms ease;
+  font-family: inherit;
+}
+.site-controls-save:hover { transform: translate(-1px, -1px); }
+
+/* ======================================================================
+   Admin notes modal
+   ====================================================================== */
+.admin-notes-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.admin-notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.admin-notes-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+}
+.admin-notes-list li strong {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--red);
+}
+.admin-notes-list li span {
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.admin-notes-list li small {
+  font-size: 0.72rem;
+  color: #888;
+}

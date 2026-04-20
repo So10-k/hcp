@@ -19,16 +19,14 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Sign in first." }, { status: 401 });
     }
-    // Event-routing + replay controls are admin-only — they bypass the
-    // normal event progression, so we don't want regular users resetting
-    // their own runs or redirecting token grants.
-    if (user.role !== "admin") {
-      return NextResponse.json({ error: "Admins only." }, { status: 403 });
-    }
     await enforceRateLimit(user.id, "events-user", 20);
     const body = (await request.json().catch(() => ({}))) as Partial<PostBody>;
 
+    // restart is admin-only (bypasses event progression)
     if (body.action === "restart") {
+      if (user.role !== "admin") {
+        return NextResponse.json({ error: "Admins only." }, { status: 403 });
+      }
       if (body.eventId !== "spring-sprint" && body.eventId !== "high-roller") {
         return NextResponse.json({ error: "Unknown event." }, { status: 400 });
       }
@@ -36,6 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
+    // set-preference is user-accessible — controls which event gets tokens
     if (body.action === "set-preference") {
       const preference = await userSetActiveEventPreference(user.id, body.preference ?? "auto");
       return NextResponse.json({ ok: true, preference });

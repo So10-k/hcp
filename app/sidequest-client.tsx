@@ -56,7 +56,9 @@ function ymd(offsetDays: number): string {
 function labelForDueDate(ymdString: string): string {
   const target = new Date(`${ymdString}T12:00:00`);
   const now = new Date();
-  const days = Math.round((target.getTime() - now.setHours(12, 0, 0, 0)) / (24 * 60 * 60 * 1000));
+  const nowNoon = new Date(now);
+  nowNoon.setHours(12, 0, 0, 0);
+  const days = Math.round((target.getTime() - nowNoon.getTime()) / (24 * 60 * 60 * 1000));
   if (days <= 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days <= 6) return target.toLocaleDateString(undefined, { weekday: "short" });

@@ -1029,7 +1029,7 @@ function SceneLaunch() {
             transform: `scale(${ctaT})`
           }}
         >
-          sidequest.app / gameboard-ltd →
+          sidequester.us / gameboard-ltd →
         </div>
       </div>
     </AbsoluteFill>

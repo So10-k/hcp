@@ -698,7 +698,7 @@ function SceneSeal() {
               opacity: 0.75
             }}
           >
-            sidequest.app / highroller
+            sidequester.us / highroller
           </div>
         </div>
         <div style={{ padding: 28 }}>

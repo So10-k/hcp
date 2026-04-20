@@ -138,6 +138,8 @@ type UserRow = {
   suspended_by?: string | null;
   preferred_mode?: string | null;
   active_event_preference?: string | null;
+  role_expires_at?: Date | string | null;
+  base_role?: string | null;
 };
 
 export function getSql() {
@@ -394,6 +396,33 @@ export async function ensureSideQuestSchema(sql: Sql = getSql()) {
     await sql`
       ALTER TABLE sidequest_users
         ADD COLUMN IF NOT EXISTS active_event_preference text NOT NULL DEFAULT 'auto'
+    `;
+    // Temporary elevated roles: base_role stores the permanent role so we
+    // can revert automatically when role_expires_at passes (lazy on read).
+    await sql`ALTER TABLE sidequest_users ADD COLUMN IF NOT EXISTS role_expires_at timestamptz`;
+    await sql`ALTER TABLE sidequest_users ADD COLUMN IF NOT EXISTS base_role text NOT NULL DEFAULT 'member'`;
+    // Site-wide key/value config (maintenance mode, custom messages, etc.)
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_site_config (
+        key text PRIMARY KEY,
+        value text NOT NULL DEFAULT '',
+        updated_by text,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    // Private admin notes attached to users — visible to all admins.
+    await sql`
+      CREATE TABLE IF NOT EXISTS sidequest_admin_notes (
+        id bigserial PRIMARY KEY,
+        admin_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        user_id text NOT NULL REFERENCES sidequest_users(id) ON DELETE CASCADE,
+        note text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS sidequest_admin_notes_user_idx
+      ON sidequest_admin_notes (user_id)
     `;
   })();
 
@@ -1167,7 +1196,9 @@ export async function getUserBySessionToken(token: string | undefined) {
       users.suspended_reason,
       users.suspended_by,
       users.preferred_mode,
-      users.active_event_preference
+      users.active_event_preference,
+      users.role_expires_at,
+      users.base_role
     FROM sidequest_sessions sessions
     INNER JOIN sidequest_users users ON users.id = sessions.user_id
     WHERE sessions.token_hash = ${hashToken(token)}
@@ -1175,7 +1206,17 @@ export async function getUserBySessionToken(token: string | undefined) {
     LIMIT 1
   `) as UserRow[];
 
-  return rows[0] ? toAuthUser(rows[0]) : null;
+  if (!rows[0]) return null;
+  const row = rows[0];
+  // Lazy expiry: auto-revert temp roles when the clock runs out.
+  if (row.role_expires_at && new Date(row.role_expires_at) < new Date()) {
+    await sql`
+      UPDATE sidequest_users SET role = base_role, role_expires_at = NULL WHERE id = ${row.id}
+    `;
+    row.role = row.base_role ?? "member";
+    row.role_expires_at = null;
+  }
+  return toAuthUser(row);
 }
 
 export async function deleteSideQuestSession(token: string | undefined) {
@@ -2258,6 +2299,7 @@ export type AdminUserSummary = {
   totalCombos: number;
   spunToday: boolean;
   preferredMode: PreferredMode;
+  roleExpiresAt: string | null;
 };
 
 export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
@@ -2286,7 +2328,8 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
       COALESCE(u.peak_combo, 0) AS peak_combo,
       COALESCE(u.total_combos, 0) AS total_combos,
       (ds.user_id IS NOT NULL) AS spun_today,
-      COALESCE(u.preferred_mode, 'playful') AS preferred_mode
+      COALESCE(u.preferred_mode, 'playful') AS preferred_mode,
+      u.role_expires_at
     FROM sidequest_users u
     LEFT JOIN sidequest_boards b ON b.id = CONCAT('user:', u.id)
     LEFT JOIN sidequest_gameboard_runs gr ON gr.user_id = u.id AND gr.event_id = ${GAMEBOARD_EVENT_ID}
@@ -2317,6 +2360,7 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     total_combos: number;
     spun_today: boolean;
     preferred_mode: string;
+    role_expires_at: Date | string | null;
   }>;
   return rows.map((row) => ({
     id: row.id,
@@ -2340,7 +2384,8 @@ export async function listUsersForAdmin(): Promise<AdminUserSummary[]> {
     peakCombo: row.peak_combo,
     totalCombos: row.total_combos,
     spunToday: row.spun_today,
-    preferredMode: normalizeMode(row.preferred_mode)
+    preferredMode: normalizeMode(row.preferred_mode),
+    roleExpiresAt: row.role_expires_at ? new Date(row.role_expires_at).toISOString() : null
   }));
 }
 
@@ -2552,7 +2597,6 @@ export async function userRestartOwnEvent(userId: string, eventId: string): Prom
         rolls_earned = 0,
         rolls_used = 0,
         laps = 0,
-        peak_position = 0,
         completed_at = NULL,
         last_flip_outcome = NULL,
         last_flip_nonce = NULL,
@@ -2601,7 +2645,6 @@ export async function adminResetGameboardEvent(
         rolls_earned = 0,
         rolls_used = 0,
         laps = 0,
-        peak_position = 0,
         completed_at = NULL,
         last_flip_outcome = NULL,
         last_flip_nonce = NULL,
@@ -2943,14 +2986,14 @@ export async function adminForceDailySpin(
   const sql = getSql();
   await ensureSideQuestSchema(sql);
   const key = todayKey();
-  await sql`
-    DELETE FROM sidequest_daily_spins
-    WHERE user_id = ${userId} AND date_key = ${key}
-  `;
   const prize = pickSpinPrize();
   await sql`
     INSERT INTO sidequest_daily_spins (user_id, date_key, prize_id, prize_kind, prize_amount)
     VALUES (${userId}, ${key}, ${prize.id}, ${prize.kind}, ${prize.amount})
+    ON CONFLICT (user_id, date_key) DO UPDATE
+      SET prize_id = EXCLUDED.prize_id,
+          prize_kind = EXCLUDED.prize_kind,
+          prize_amount = EXCLUDED.prize_amount
   `;
   await applySpinPrize(userId, prize, { adminId, awardedBy: adminId });
   return { prizeId: prize.id, prizeKind: prize.kind, amount: prize.amount };
@@ -3092,4 +3135,164 @@ export async function adminSetPreferredMode(
     payload: { mode },
     awardedBy: adminId
   });
+}
+
+// ===========================================================================
+// Site config — maintenance mode and other site-wide toggles.
+// ===========================================================================
+
+export async function getSiteConfig(key: string): Promise<string | null> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`SELECT value FROM sidequest_site_config WHERE key = ${key}`) as Array<{ value: string }>;
+  return rows[0]?.value ?? null;
+}
+
+export async function setSiteConfig(adminId: string, key: string, value: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  await sql`
+    INSERT INTO sidequest_site_config (key, value, updated_by, updated_at)
+    VALUES (${key}, ${value}, ${adminId}, now())
+    ON CONFLICT (key) DO UPDATE
+      SET value = EXCLUDED.value,
+          updated_by = EXCLUDED.updated_by,
+          updated_at = now()
+  `;
+  await writeAudit(adminId, null, "set-site-config", { key, value });
+}
+
+export async function getMaintenanceConfig(): Promise<{ enabled: boolean; message: string }> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT key, value FROM sidequest_site_config
+    WHERE key IN ('maintenance_enabled', 'maintenance_message')
+  `) as Array<{ key: string; value: string }>;
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  return {
+    enabled: map.get("maintenance_enabled") === "true",
+    message: map.get("maintenance_message") ?? "SideQuest is down for a quick update. Check back soon!"
+  };
+}
+
+// ===========================================================================
+// Extended admin actions — force logout, temp roles, broadcast, user notes.
+// ===========================================================================
+
+export async function adminForceLogout(adminId: string, userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  if (userId === adminId) throw new Error("Cannot log yourself out.");
+  await sql`DELETE FROM sidequest_sessions WHERE user_id = ${userId}`;
+  await writeAudit(adminId, userId, "force-logout", null);
+  await createNotification(userId, {
+    kind: "custom",
+    title: "Signed out by admin",
+    body: "An admin signed out all of your active sessions. Sign back in when you're ready.",
+    awardedBy: adminId
+  });
+}
+
+export async function adminGrantTempRole(
+  adminId: string,
+  userId: string,
+  durationHours: number
+): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  if (userId === adminId) throw new Error("Cannot change your own role.");
+  const h = Math.min(Math.max(Math.round(durationHours), 1), 72);
+  await sql`
+    UPDATE sidequest_users
+    SET base_role = CASE WHEN role != 'admin' THEN role ELSE base_role END,
+        role = 'admin',
+        role_expires_at = now() + (${String(h)} || ' hours')::interval
+    WHERE id = ${userId}
+  `;
+  await writeAudit(adminId, userId, "grant-temp-admin", { durationHours: h });
+  await createNotification(userId, {
+    kind: "custom",
+    title: `Temporary admin access (${h}h)`,
+    body: `You have admin access for ${h} hour${h === 1 ? "" : "s"}. It expires automatically.`,
+    awardedBy: adminId
+  });
+}
+
+export async function adminRevokeRole(adminId: string, userId: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  if (userId === adminId) throw new Error("Cannot revoke your own role.");
+  await sql`
+    UPDATE sidequest_users SET role = base_role, role_expires_at = NULL WHERE id = ${userId}
+  `;
+  await writeAudit(adminId, userId, "revoke-role", null);
+  await createNotification(userId, {
+    kind: "custom",
+    title: "Admin access removed",
+    body: "Your temporary admin access has been revoked.",
+    awardedBy: adminId
+  });
+}
+
+export async function adminBroadcastNotification(
+  adminId: string,
+  title: string,
+  body: string
+): Promise<{ sentTo: number }> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const users = (await sql`
+    SELECT id FROM sidequest_users WHERE suspended_at IS NULL AND id != ${adminId}
+  `) as Array<{ id: string }>;
+  for (const user of users) {
+    await createNotification(user.id, {
+      kind: "custom",
+      title,
+      body,
+      awardedBy: adminId
+    });
+  }
+  await writeAudit(adminId, null, "broadcast", { title, body, sentTo: users.length });
+  return { sentTo: users.length };
+}
+
+export type AdminNote = {
+  id: number;
+  adminId: string;
+  adminUsername: string;
+  note: string;
+  createdAt: string;
+};
+
+export async function addAdminNote(adminId: string, userId: string, note: string): Promise<void> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const trimmed = note.trim();
+  if (!trimmed) throw new Error("Note cannot be empty.");
+  await sql`
+    INSERT INTO sidequest_admin_notes (admin_id, user_id, note)
+    VALUES (${adminId}, ${userId}, ${trimmed})
+  `;
+  await writeAudit(adminId, userId, "add-note", { preview: trimmed.slice(0, 80) });
+}
+
+export async function getAdminNotes(userId: string): Promise<AdminNote[]> {
+  const sql = getSql();
+  await ensureSideQuestSchema(sql);
+  const rows = (await sql`
+    SELECT n.id, n.admin_id, u.username AS admin_username, n.note, n.created_at
+    FROM sidequest_admin_notes n
+    JOIN sidequest_users u ON u.id = n.admin_id
+    WHERE n.user_id = ${userId}
+    ORDER BY n.created_at DESC
+    LIMIT 50
+  `) as Array<{ id: number; admin_id: string; admin_username: string | null; note: string; created_at: Date | string }>;
+  return rows.map((r) => ({
+    id: Number(r.id),
+    adminId: r.admin_id,
+    adminUsername: r.admin_username ?? "admin",
+    note: r.note,
+    createdAt: new Date(r.created_at).toISOString()
+  }));
 }

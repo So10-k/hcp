@@ -27,6 +27,15 @@ type AdminUserSummary = {
   totalCombos: number;
   spunToday: boolean;
   preferredMode: "playful" | "pro";
+  roleExpiresAt: string | null;
+};
+
+type AdminNote = {
+  id: number;
+  adminId: string;
+  adminUsername: string;
+  note: string;
+  createdAt: string;
 };
 
 type EventId = "spring-sprint" | "high-roller";
@@ -50,6 +59,8 @@ type ModalState =
   | { kind: "sticker"; user: AdminUserSummary }
   | { kind: "badge"; user: AdminUserSummary }
   | { kind: "event"; user: AdminUserSummary }
+  | { kind: "temp-role"; user: AdminUserSummary }
+  | { kind: "notes"; user: AdminUserSummary }
   | null;
 
 async function postAction(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string }> {
@@ -139,6 +150,12 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
     );
   };
 
+  const quickForceLogout = (user: AdminUserSummary) =>
+    runAction({ action: "force-logout", userId: user.id }, user, "Force logged out");
+
+  const quickRevokeRole = (user: AdminUserSummary) =>
+    runAction({ action: "revoke-role", userId: user.id }, user, "Role revoked");
+
   return (
     <section className="admin-panel admin-user-panel" aria-labelledby="admin-users-title">
       <div className="panel-heading">
@@ -214,6 +231,19 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                   </td>
                   <td>
                     <span className={`admin-role-pill admin-role-${user.role}`}>{user.role}</span>
+                    {user.roleExpiresAt ? (
+                      <span className="admin-user-sub admin-role-temp">
+                        temp · exp {new Date(user.roleExpiresAt).toLocaleString()}
+                        <button
+                          type="button"
+                          className="admin-inline-reset"
+                          onClick={() => void quickRevokeRole(user)}
+                          title="Revoke temporary role"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ) : null}
                   </td>
                   <td>
                     <span className="admin-user-stat">{user.questsCompleted}</span>
@@ -306,6 +336,21 @@ export function AdminUserPanel({ initialUsers, badges, adminId }: Props) {
                     <button type="button" onClick={() => setModal({ kind: "event", user })}>
                       Event
                     </button>
+                    <button type="button" onClick={() => setModal({ kind: "temp-role", user })}>
+                      Temp admin
+                    </button>
+                    <button type="button" onClick={() => setModal({ kind: "notes", user })}>
+                      Notes
+                    </button>
+                    <button
+                      type="button"
+                      className="is-warn"
+                      onClick={() => void quickForceLogout(user)}
+                      disabled={user.id === adminId}
+                      title="Sign out all sessions"
+                    >
+                      Logout
+                    </button>
                     <Link
                       className="admin-user-action-link"
                       href={`/admin/spectate/${user.id}`}
@@ -374,6 +419,24 @@ function AdminModal({
   const [eventId, setEventId] = useState<EventId>("spring-sprint");
   const [eventAction, setEventAction] = useState<EventActionKind>("fast-forward");
   const [eventCount, setEventCount] = useState(5);
+  const [tempRoleHours, setTempRoleHours] = useState(4);
+  const [noteText, setNoteText] = useState("");
+  const [notes, setNotes] = useState<AdminNote[]>([]);
+  const [notesLoaded, setNotesLoaded] = useState(false);
+
+  // Load notes when the notes modal opens
+  if (modal.kind === "notes" && !notesLoaded) {
+    void fetch("/api/admin/actions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "get-notes", userId: modal.user.id })
+    })
+      .then((r) => r.json())
+      .then((d: { notes?: AdminNote[] }) => {
+        setNotes(d.notes ?? []);
+        setNotesLoaded(true);
+      });
+  }
 
   const handleSubmit = async () => {
     switch (modal.kind) {
@@ -435,6 +498,22 @@ function AdminModal({
             `+${eventCount} ${eventId === "high-roller" ? "flips" : "dice"} · ${eventLabel}`
           );
         }
+        return;
+      }
+      case "temp-role":
+        await onSubmit(
+          { action: "grant-temp-role", userId: modal.user.id, durationHours: tempRoleHours },
+          `Temp admin ${tempRoleHours}h`
+        );
+        return;
+      case "notes": {
+        if (!noteText.trim()) return;
+        await onSubmit({ action: "add-note", userId: modal.user.id, note: noteText }, "Note saved");
+        setNoteText("");
+        setNotes((prev) => [
+          { id: Date.now(), adminId: "", adminUsername: "you", note: noteText.trim(), createdAt: new Date().toISOString() },
+          ...prev
+        ]);
         return;
       }
     }
@@ -571,6 +650,53 @@ function AdminModal({
             </div>
           ) : null}
 
+          {modal.kind === "temp-role" ? (
+            <>
+              <label>
+                Duration (hours, max 72)
+                <input
+                  type="number"
+                  min={1}
+                  max={72}
+                  value={tempRoleHours}
+                  onChange={(e) => setTempRoleHours(Number.parseInt(e.target.value, 10) || 1)}
+                />
+              </label>
+              <p className="admin-modal-warn">
+                Grants admin access that expires automatically after {tempRoleHours}h. The user's original role is restored when it expires or when you revoke it.
+              </p>
+            </>
+          ) : null}
+
+          {modal.kind === "notes" ? (
+            <div className="admin-notes-modal">
+              <label>
+                Add a note
+                <textarea
+                  rows={3}
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  placeholder="Private note about this user — only admins can see this."
+                />
+              </label>
+              {notesLoaded && notes.length > 0 ? (
+                <ul className="admin-notes-list">
+                  {notes.map((n) => (
+                    <li key={n.id}>
+                      <strong>@{n.adminUsername}</strong>
+                      <span>{n.note}</span>
+                      <small>{new Date(n.createdAt).toLocaleString()}</small>
+                    </li>
+                  ))}
+                </ul>
+              ) : notesLoaded ? (
+                <p className="admin-empty">No notes yet for this user.</p>
+              ) : (
+                <p className="admin-empty">Loading…</p>
+              )}
+            </div>
+          ) : null}
+
           {modal.kind === "event" ? (
             <>
               <fieldset className="admin-event-fieldset">
@@ -660,6 +786,8 @@ function modalTitle(kind: NonNullable<ModalState>["kind"]) {
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
     case "event": return "Event controls";
+    case "temp-role": return "Temporary admin access";
+    case "notes": return "Admin notes";
   }
 }
 
@@ -671,5 +799,7 @@ function modalAction(kind: NonNullable<ModalState>["kind"]) {
     case "sticker": return "Award sticker";
     case "badge": return "Award badge";
     case "event": return "Apply event action";
+    case "temp-role": return "Grant temp admin";
+    case "notes": return "Save note";
   }
 }

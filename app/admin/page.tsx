@@ -2,21 +2,24 @@ import Link from "next/link";
 import { requireAdmin } from "../lib/auth";
 import { ADMIN_BADGES } from "../lib/badge-catalog";
 import {
+  getMaintenanceConfig,
   getSideQuestAnalytics,
   listRecentAdminAudit,
   listUsersForAdmin
 } from "../lib/sidequest-db";
 import { categoryMeta } from "../seed-data";
+import { SiteControls } from "../components/site-controls";
 import { AdminUserPanel } from "./admin-user-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   const admin = await requireAdmin();
-  const [analytics, users, audit] = await Promise.all([
+  const [analytics, users, audit, maintenance] = await Promise.all([
     getSideQuestAnalytics(),
     listUsersForAdmin(),
-    listRecentAdminAudit(25)
+    listRecentAdminAudit(25),
+    getMaintenanceConfig()
   ]);
   const updated = analytics.updatedAt ? new Date(analytics.updatedAt).toLocaleString() : "Waiting for DATABASE_URL";
 
@@ -122,6 +125,8 @@ export default async function AdminPage() {
         </div>
       </section>
 
+      <SiteControls initialEnabled={maintenance.enabled} initialMessage={maintenance.message} />
+
       <AdminUserPanel initialUsers={users} badges={ADMIN_BADGES} adminId={admin.id} />
     </main>
   );
@@ -129,18 +134,18 @@ export default async function AdminPage() {
 
 function humaniseAction(action: string) {
   switch (action) {
-    case "suspend":
-      return "paused an account";
-    case "unsuspend":
-      return "restored an account";
-    case "award-dice":
-      return "granted bonus die rolls";
-    case "award-badge":
-      return "awarded a badge";
-    case "award-sticker":
-      return "awarded a sticker";
-    default:
-      return action;
+    case "suspend": return "paused an account";
+    case "unsuspend": return "restored an account";
+    case "award-dice": return "granted bonus die rolls";
+    case "award-badge": return "awarded a badge";
+    case "award-sticker": return "awarded a sticker";
+    case "force-logout": return "force-logged out a user";
+    case "grant-temp-admin": return "granted temporary admin";
+    case "revoke-role": return "revoked role";
+    case "broadcast": return "sent broadcast notification";
+    case "add-note": return "added admin note";
+    case "set-site-config": return "changed site config";
+    default: return action;
   }
 }
 

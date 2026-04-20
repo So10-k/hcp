@@ -816,7 +816,7 @@ function SceneOutro() {
             transform: `translateY(${(1 - urlT) * 20}px)`
           }}
         >
-          sidequest.app
+          sidequester.us
         </div>
       </div>
 
